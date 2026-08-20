@@ -24,6 +24,8 @@ function getSheetsClient() {
 }
 
 const SHEET_NAME = 'REGISTROS';
+const SHEET_LISTAS = 'LISTAS_CONCEJALES';
+const ENCABEZADOS_LISTAS = ['Concejal', 'Lista', 'Cedula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Estado'];
 
 /** Formatea una fecha (ISO UTC o Date) a hora local de Paraguay, legible. */
 function formatearFechaPY(valor) {
@@ -37,6 +39,31 @@ function formatearFechaPY(valor) {
   } catch (e) {
     return String(valor || '');
   }
+}
+
+const hojasVerificadas = new Set();
+
+/** Crea la pestaña con encabezados si todavia no existe en el spreadsheet. */
+async function asegurarHoja(sheets, spreadsheetId, nombreHoja, encabezados) {
+  if (hojasVerificadas.has(nombreHoja)) return;
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const existe = meta.data.sheets.some((s) => s.properties.title === nombreHoja);
+
+  if (!existe) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: nombreHoja } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${nombreHoja}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [encabezados] },
+    });
+  }
+
+  hojasVerificadas.add(nombreHoja);
 }
 
 /**
@@ -53,6 +80,11 @@ async function backupRegistro(registro) {
   try {
     const sheets = getSheetsClient();
     if (!sheets) return;
+
+    await asegurarHoja(sheets, sheetId, SHEET_NAME, [
+      'Fecha', 'Cedula', 'Orden', 'Nombre', 'Local', 'Mesa', 'Lista preasignada',
+      'Concejal preasignado', 'Lista asignada', 'Concejal asignado', 'Estado', 'Origen', 'Dispositivo',
+    ]);
 
     const fila = [
       formatearFechaPY(registro.fechaHora),
@@ -83,4 +115,77 @@ async function backupRegistro(registro) {
   }
 }
 
-module.exports = { backupRegistro };
+/**
+ * Reescribe por completo la pestaña LISTAS_CONCEJALES con el estado actual
+ * de TODAS las listas de TODOS los concejales (se crea sola si no existe).
+ * A diferencia de backupRegistro, esto no es un log incremental: cada
+ * llamada reemplaza el contenido entero para que la hoja siempre refleje
+ * la foto real y completa de las listas. Nunca bloquea ni hace fallar la
+ * operacion que la dispara (alta/baja de un votante en una lista).
+ */
+async function sincronizarListasConcejales(db) {
+  const sheetId = process.env.GOOGLE_SHEET_ID_BACKUP;
+  if (!sheetId) return;
+
+  try {
+    const sheets = getSheetsClient();
+    if (!sheets) return;
+
+    await asegurarHoja(sheets, sheetId, SHEET_LISTAS, ENCABEZADOS_LISTAS);
+
+    const [votantesConcejalSnap, registrosSnap] = await Promise.all([
+      db.collection('votantesConcejal').get(),
+      db.collection('registros').select('cedula', 'estadoGestion').get(),
+    ]);
+
+    const estadoPorCedula = {};
+    registrosSnap.forEach((doc) => {
+      const r = doc.data();
+      estadoPorCedula[r.cedula] = r.estadoGestion;
+    });
+
+    const votantes = votantesConcejalSnap.docs.map((d) => d.data());
+
+    // Local/mesa no se guardan en votantesConcejal: se resuelven contra el padron en lotes.
+    const cedulasUnicas = [...new Set(votantes.map((v) => v.cedula))];
+    const padronPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < cedulasUnicas.length; i += LOTE) {
+      const lote = cedulasUnicas.slice(i, i + LOTE);
+      if (lote.length === 0) continue;
+      const snap = await db.collection('padron').where('cedula', 'in', lote).get();
+      snap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+    }
+
+    const filas = votantes
+      .sort((a, b) => (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '') || String(a.cedula).localeCompare(String(b.cedula)))
+      .map((v) => {
+        const padron = padronPorCedula[v.cedula] || {};
+        return [
+          v.nombreConcejal || '',
+          v.lista ?? '',
+          v.cedula || '',
+          v.nombresApellidos || padron.nombresApellidos || '',
+          padron.local || '',
+          padron.mesa ?? '',
+          v.caudillo ?? '',
+          estadoPorCedula[v.cedula] === 'REGISTRADO' ? 'REGISTRADO' : 'PENDIENTE',
+        ];
+      });
+
+    await sheets.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `${SHEET_LISTAS}!A2:Z` });
+
+    if (filas.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: `${SHEET_LISTAS}!A2`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: filas },
+      });
+    }
+  } catch (error) {
+    console.error('No se pudo sincronizar LISTAS_CONCEJALES:', error.message);
+  }
+}
+
+module.exports = { backupRegistro, sincronizarListasConcejales };

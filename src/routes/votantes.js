@@ -89,9 +89,25 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     .get();
   const preasignados = preasignadosSnap.docs.map((d) => d.data());
 
+  let listaFinal = listaAsignada ?? preasignados[0]?.lista ?? null;
+  let concejalFinal = concejalAsignado ?? preasignados[0]?.nombreConcejal ?? null;
+
+  if (usuario.rol === 'concejal') {
+    // El concejal solo puede confirmar votantes de su propia lista, y siempre
+    // queda asignado a si mismo (no puede reportar a nombre de otro concejal).
+    const propio = preasignados.find((p) => p.nombreConcejal === usuario.nombreConcejal);
+    if (!propio) {
+      return { ok: false, codigo: 403, mensaje: 'Esa cedula no esta en tu lista.' };
+    }
+    listaFinal = propio.lista ?? null;
+    concejalFinal = usuario.nombreConcejal;
+  }
+
   const origenRegistro =
     usuario.rol === 'comando'
       ? `Registrado en Puesto Comando (${usuario.local})`
+      : usuario.rol === 'concejal'
+      ? `Confirmado por el concejal ${usuario.nombreConcejal} (reporte manual)`
       : `Registrado como Veedor Mesa ${usuario.mesa} — ${usuario.local}`;
 
   const registro = {
@@ -102,8 +118,8 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     mesa: padron.mesa,
     listaPreasignada: preasignados[0]?.lista ?? null,
     concejalPreasignado: preasignados.map((p) => p.nombreConcejal).join(' / ') || null,
-    listaAsignada: listaAsignada ?? preasignados[0]?.lista ?? null,
-    concejalAsignado: concejalAsignado ?? preasignados[0]?.nombreConcejal ?? null,
+    listaAsignada: listaFinal,
+    concejalAsignado: concejalFinal,
     estadoGestion: 'REGISTRADO',
     origenRegistro,
     fechaHora: fechaHoraCliente || new Date().toISOString(),
@@ -121,9 +137,11 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
 
 /**
  * POST /api/votantes/registrar
- * Registro individual (uso normal con conexion).
+ * Registro individual (uso normal con conexion). El concejal tambien puede
+ * usar esta ruta para confirmar, desde su propia lista, que alguien ya paso
+ * por comando o mesa (reporte manual, ej. porque el votante lo aviso).
  */
-router.post('/registrar', requiereRol('comando', 'mesa'), async (req, res) => {
+router.post('/registrar', requiereRol('comando', 'mesa', 'concejal'), async (req, res) => {
   try {
     const resultado = await registrarVotante({
       usuario: req.usuario,

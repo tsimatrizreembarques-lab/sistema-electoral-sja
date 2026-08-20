@@ -98,7 +98,28 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
     preasignadosSnap.docs.forEach((d) => {
       caudillosPorCedula[d.data().cedula] = d.data().caudillo || null;
     });
-    const registradosConCaudillo = registrados.map((r) => ({ ...r, caudillo: caudillosPorCedula[r.cedula] || null }));
+
+    // Duplicados: cedulas de MI lista que tambien figuran en la lista de otro
+    // concejal (se resuelven en comando, pero se muestran como alerta aca).
+    const todasMisCedulas = [...new Set([...registrados.map((r) => r.cedula), ...preasignadosSnap.docs.map((d) => d.data().cedula)])];
+    const conteoGlobalPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < todasMisCedulas.length; i += LOTE) {
+      const lote = todasMisCedulas.slice(i, i + LOTE);
+      if (lote.length === 0) continue;
+      const snap = await db.collection('votantesConcejal').where('cedula', 'in', lote).get();
+      snap.forEach((d) => {
+        const c = d.data().cedula;
+        conteoGlobalPorCedula[c] = (conteoGlobalPorCedula[c] || 0) + 1;
+      });
+    }
+    const esDuplicado = (cedula) => (conteoGlobalPorCedula[cedula] || 0) > 1;
+
+    const registradosConCaudillo = registrados.map((r) => ({
+      ...r,
+      caudillo: caudillosPorCedula[r.cedula] || null,
+      duplicado: esDuplicado(r.cedula),
+    }));
 
     // Preasignados a este concejal que todavia no tienen ningun registro.
     const pendientes = [];
@@ -114,6 +135,7 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
           mesa: padron.mesa || null,
       caudillo: v.caudillo || null,
           estadoGestion: 'PENDIENTE',
+          duplicado: esDuplicado(v.cedula),
         });
       }
     }

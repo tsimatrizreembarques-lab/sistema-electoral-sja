@@ -117,7 +117,10 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
   font-size: 0.9rem;
 }
 .fila-votante.ok { border-left: 4px solid var(--negro); }
+.fila-votante.duplicado { background: #fef9c3; border-left: 4px solid #ca8a04; }
 .fila-votante .estado { color: var(--gris); font-size: 0.8rem; text-align: right; }
+.advertencia-duplicado { display: block; color: #92400e; font-size: 0.75rem; font-weight: 600; }
+.btn-ya-voto { color: var(--rojo); font-weight: 600; }
 
 .grid-totales {
   display: grid;

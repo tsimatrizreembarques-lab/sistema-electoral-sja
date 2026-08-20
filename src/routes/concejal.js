@@ -2,6 +2,7 @@ const express = require('express');
 const { getFirestore } = require('../lib/firestore');
 const { requiereRol } = require('../lib/auth');
 const { normalizarCedula } = require('../lib/normalizar');
+const { sincronizarListasConcejales } = require('../lib/sheetsBackup');
 
 const router = express.Router();
 
@@ -78,6 +79,9 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
       nombresApellidos: padron.nombresApellidos,
     });
 
+    // Respaldo en Sheets: nunca bloquea ni hace fallar el alta principal.
+    sincronizarListasConcejales(db).catch(() => {});
+
     res.status(201).json({ ok: true, cedula, nombresApellidos: padron.nombresApellidos });
   } catch (error) {
     console.error('Error al agregar votante a lista de concejal:', error);
@@ -96,6 +100,10 @@ router.delete('/eliminar/:cedula', requiereRol('concejal'), async (req, res) => 
     const nombreConcejal = req.usuario.nombreConcejal;
 
     await db.collection('votantesConcejal').doc(`${cedula}__${nombreConcejal}`).delete();
+
+    // Respaldo en Sheets: nunca bloquea ni hace fallar la baja principal.
+    sincronizarListasConcejales(db).catch(() => {});
+
     res.json({ ok: true });
   } catch (error) {
     console.error('Error al eliminar votante de lista de concejal:', error);

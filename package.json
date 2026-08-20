@@ -8,6 +8,7 @@
     "import:padron": "node scripts/import-padron.js",
     "import:concejales": "node scripts/import-concejales.js",
     "import:votantes-concejal": "node scripts/import-votantes-concejal.js",
+    "export:listas-concejales": "node scripts/export-listas-concejales.js",
     "create-user": "node scripts/create-user.js"
   },
   "dependencies": {

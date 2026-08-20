@@ -61,7 +61,19 @@ async function renderComando(root, perfil) {
     }
 
     // Registrar: offline-first, siempre busca primero en la base local del dispositivo.
-    const votante = await window.DBLocal.buscarVotante(cedulaLimpia);
+    let votante = await window.DBLocal.buscarVotante(cedulaLimpia);
+
+    // Si hay señal, se refresca el estado contra el servidor: otro dispositivo
+    // (ej. una Mesa) puede haber registrado a esta persona despues de que este
+    // dispositivo descargo su paquete local, y el cache local no se entera solo.
+    if (votante && navigator.onLine) {
+      const { ok, datos } = await window.Api.buscarVotante(cedulaLimpia);
+      if (ok && datos.registroActual) {
+        votante = { ...votante, registroActual: datos.registroActual };
+        await window.DBLocal.marcarRegistradoLocalmente(datos.registroActual);
+      }
+    }
+
     renderResultadoComando(votante, cedula, perfil, modoComando);
   });
 }

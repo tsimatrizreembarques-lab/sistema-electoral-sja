@@ -10,8 +10,10 @@ async function renderConcejal(root, perfil) {
     <main class="contenido">
       <div id="resumen" class="tarjeta"></div>
 
-      <h3>Por mesa</h3>
-      <div id="por-mesa"></div>
+      <button type="button" id="btn-ver-por-mesa" class="secundario" style="width:100%; margin-bottom:12px;">
+        📊 Ver avance por mesa
+      </button>
+      <div id="por-mesa" class="oculto"></div>
 
       <div class="tarjeta">
         <h3>Agregar votante</h3>
@@ -29,6 +31,12 @@ async function renderConcejal(root, perfil) {
   document.getElementById('btn-salir').addEventListener('click', async () => {
     await window.DBLocal.cerrarSesion();
     window.App.irA('login');
+  });
+
+  document.getElementById('btn-ver-por-mesa').addEventListener('click', () => {
+    const panel = document.getElementById('por-mesa');
+    const oculto = panel.classList.toggle('oculto');
+    document.getElementById('btn-ver-por-mesa').textContent = oculto ? '📊 Ver avance por mesa' : '📊 Ocultar avance por mesa';
   });
 
   document.getElementById('form-agregar').addEventListener('submit', async (e) => {
@@ -76,12 +84,28 @@ async function renderConcejal(root, perfil) {
   }
 
   document.getElementById('lista').addEventListener('click', async (e) => {
-    const btn = e.target.closest('.btn-eliminar');
-    if (!btn) return;
-    const cedula = btn.dataset.cedula;
-    if (!confirm('¿Eliminar a esta persona de tu lista?')) return;
-    await window.Api.concejalEliminar(cedula);
-    await cargar();
+    const btnEliminar = e.target.closest('.btn-eliminar');
+    if (btnEliminar) {
+      const cedula = btnEliminar.dataset.cedula;
+      if (!confirm('¿Eliminar a esta persona de tu lista?')) return;
+      await window.Api.concejalEliminar(cedula);
+      await cargar();
+      return;
+    }
+
+    const btnVoto = e.target.closest('.btn-ya-voto');
+    if (btnVoto) {
+      const cedula = btnVoto.dataset.cedula;
+      if (!confirm('¿Confirmás que esta persona ya pasó por comando o mesa? Se va a sumar al conteo oficial.')) return;
+      btnVoto.disabled = true;
+      const resp = await window.Api.registrarVotante({ cedula, dispositivoId: `concejal-${perfil.usuario}` });
+      if (!resp.ok) {
+        alert(resp.datos?.mensaje || resp.datos?.error || 'No se pudo confirmar.');
+        btnVoto.disabled = false;
+        return;
+      }
+      await cargar();
+    }
   });
 
   async function cargar() {
@@ -106,18 +130,24 @@ async function renderConcejal(root, perfil) {
     document.getElementById('lista').innerHTML = datos.votantes
       .map(
         (v) => `
-      <div class="fila-votante ${v.estadoGestion === 'REGISTRADO' ? 'ok' : ''}">
+      <div class="fila-votante ${v.estadoGestion === 'REGISTRADO' ? 'ok' : ''} ${v.duplicado ? 'duplicado' : ''}">
         <span class="icono-estado">${v.estadoGestion === 'REGISTRADO' ? '✓' : '○'}</span>
         <span class="nombre-votante">
           ${v.nombresApellidos}
           ${v.local ? `<span class="sub"> · ${v.local}${v.mesa ? ` — Mesa ${v.mesa}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${v.caudillo}</span>` : ''}
+          ${v.duplicado ? `<span class="advertencia-duplicado">⚠ Duplicado en otra lista</span>` : ''}
         </span>
         <span class="estado">${
           v.estadoGestion === 'REGISTRADO'
             ? `Registrado (${v.origenRegistro || ''})`
             : 'Pendiente'
         }</span>
+        ${
+          v.estadoGestion === 'REGISTRADO'
+            ? ''
+            : `<button class="btn-ya-voto link" data-cedula="${v.cedula}">Ya votó</button>`
+        }
         <button class="btn-eliminar link" data-cedula="${v.cedula}">Eliminar</button>
       </div>`
       )
