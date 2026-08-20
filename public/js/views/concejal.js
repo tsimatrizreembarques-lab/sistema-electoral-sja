@@ -93,7 +93,7 @@ async function renderConcejal(root, perfil) {
       return;
     }
 
-    const btnVoto = e.target.closest('.btn-ya-voto');
+    const btnVoto = e.target.closest('.btn-registrar');
     if (btnVoto) {
       const cedula = btnVoto.dataset.cedula;
       if (!confirm('¿Confirmás que esta persona ya pasó por comando o mesa? Se va a sumar al conteo oficial.')) return;
@@ -144,12 +144,14 @@ async function renderConcejal(root, perfil) {
             ? `Registrado (${v.origenRegistro || ''})`
             : 'Pendiente'
         }</span>
-        ${
-          v.estadoGestion === 'REGISTRADO'
-            ? ''
-            : `<button class="btn-ya-voto link" data-cedula="${v.cedula}">Ya votó</button>`
-        }
-        <button class="btn-eliminar link" data-cedula="${v.cedula}">Eliminar</button>
+        <span class="acciones-fila">
+          ${
+            v.estadoGestion === 'REGISTRADO'
+              ? ''
+              : `<button class="btn-registrar" data-cedula="${v.cedula}">Registrar</button>`
+          }
+          <button class="btn-eliminar" data-cedula="${v.cedula}">Eliminar</button>
+        </span>
       </div>`
       )
       .join('');

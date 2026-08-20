@@ -121,7 +121,28 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
 .fila-votante.duplicado { background: #fef9c3; border-left: 4px solid #ca8a04; }
 .fila-votante .estado { color: var(--gris); font-size: 0.8rem; text-align: right; }
 .advertencia-duplicado { display: block; color: #92400e; font-size: 0.75rem; font-weight: 600; }
-.btn-ya-voto { color: var(--rojo); font-weight: 600; }
+
+.acciones-fila { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-registrar {
+  background: var(--verde);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-eliminar {
+  background: white;
+  color: var(--rojo-alerta);
+  border: 1.5px solid var(--rojo-alerta);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 .grid-totales {
   display: grid;
@@ -157,6 +178,5 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
 .fila-votante .icono-estado { font-size: 1.1rem; color: var(--gris); flex-shrink: 0; }
 .fila-votante.ok .icono-estado { color: var(--verde); }
 .fila-votante .nombre-votante { flex: 1; min-width: 140px; }
-.fila-votante .btn-eliminar { flex-shrink: 0; font-size: 0.85rem; }
 
 .tarjeta .fila-busqueda button[type="submit"] { width: auto; flex-shrink: 0; }
