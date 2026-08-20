@@ -10,9 +10,14 @@ async function renderConcejal(root, perfil) {
     <main class="contenido">
       <div id="resumen" class="tarjeta"></div>
 
-      <button type="button" id="btn-ver-por-mesa" class="secundario" style="width:100%; margin-bottom:12px;">
-        📊 Ver avance por mesa
-      </button>
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <button type="button" id="btn-ver-por-mesa" class="secundario" style="flex:1;">
+          📊 Ver avance por mesa
+        </button>
+        <button type="button" id="btn-pdf" class="secundario" style="flex:1;">
+          📄 Generar PDF
+        </button>
+      </div>
       <div id="por-mesa" class="oculto"></div>
 
       <div class="tarjeta">
@@ -37,6 +42,13 @@ async function renderConcejal(root, perfil) {
     const panel = document.getElementById('por-mesa');
     const oculto = panel.classList.toggle('oculto');
     document.getElementById('btn-ver-por-mesa').textContent = oculto ? '📊 Ver avance por mesa' : '📊 Ocultar avance por mesa';
+  });
+
+  let ultimosDatos = null;
+
+  document.getElementById('btn-pdf').addEventListener('click', () => {
+    if (!ultimosDatos) return;
+    generarPDFLista(ultimosDatos, perfil);
   });
 
   document.getElementById('form-agregar').addEventListener('submit', async (e) => {
@@ -88,7 +100,10 @@ async function renderConcejal(root, perfil) {
     if (btnEliminar) {
       const cedula = btnEliminar.dataset.cedula;
       if (!confirm('¿Eliminar a esta persona de tu lista?')) return;
-      await window.Api.concejalEliminar(cedula);
+      const resp = await window.Api.concejalEliminar(cedula);
+      if (!resp.ok) {
+        alert(resp.datos?.error || 'No se pudo eliminar.');
+      }
       await cargar();
       return;
     }
@@ -114,6 +129,7 @@ async function renderConcejal(root, perfil) {
       document.getElementById('resumen').innerHTML = '<p class="alerta">No se pudo cargar (¿hay conexión?).</p>';
       return;
     }
+    ultimosDatos = datos;
 
     document.getElementById('resumen').innerHTML = `
       <p>Total asignado: <strong>${datos.totalAsignado}</strong></p>
@@ -148,9 +164,9 @@ async function renderConcejal(root, perfil) {
           ${
             v.estadoGestion === 'REGISTRADO'
               ? ''
-              : `<button class="btn-registrar" data-cedula="${v.cedula}">Registrar</button>`
+              : `<button class="btn-registrar" data-cedula="${v.cedula}">Registrar</button>
+                 <button class="btn-eliminar" data-cedula="${v.cedula}">Eliminar</button>`
           }
-          <button class="btn-eliminar" data-cedula="${v.cedula}">Eliminar</button>
         </span>
       </div>`
       )
@@ -159,6 +175,94 @@ async function renderConcejal(root, perfil) {
 
   await cargar();
   setInterval(cargar, 15000); // actualizacion en vivo cada 15s mientras haya señal
+}
+
+/**
+ * Abre una pestaña con la lista en formato imprimible y dispara el dialogo
+ * de impresion del navegador (desde ahi se puede elegir "Guardar como PDF").
+ * No usa ninguna libreria externa: es la forma mas simple y confiable de
+ * generar un PDF que funcione tambien offline, sin depender del servidor.
+ */
+function generarPDFLista(datos, perfil) {
+  const votantes = [...datos.votantes].sort((a, b) => {
+    const localA = a.local || '', localB = b.local || '';
+    if (localA !== localB) return localA.localeCompare(localB);
+    if ((a.mesa || 0) !== (b.mesa || 0)) return (a.mesa || 0) - (b.mesa || 0);
+    return (a.nombresApellidos || '').localeCompare(b.nombresApellidos || '');
+  });
+
+  const totalDuplicados = votantes.filter((v) => v.duplicado).length;
+  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
+
+  const filas = votantes
+    .map(
+      (v, i) => `
+    <tr class="${v.duplicado ? 'duplicado' : ''}">
+      <td>${i + 1}</td>
+      <td>${v.cedula}</td>
+      <td>${v.nombresApellidos || ''}</td>
+      <td>${v.local || '-'}</td>
+      <td>${v.mesa ?? '-'}</td>
+      <td>${v.caudillo || '-'}</td>
+      <td>${v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente'}</td>
+      <td>${v.duplicado ? '⚠ DUPLICADO' : ''}</td>
+    </tr>`
+    )
+    .join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Lista de votantes - ${perfil.nombreConcejal}</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+        h1 { font-size: 1.3rem; margin-bottom: 4px; }
+        .sub { color: #555; font-size: 0.85rem; margin-bottom: 16px; }
+        .resumen { display: flex; gap: 24px; margin-bottom: 16px; font-size: 0.9rem; }
+        .resumen strong { display: block; font-size: 1.2rem; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #f1f1f1; }
+        tr.duplicado { background: #fef9c3; }
+        tr.duplicado td:last-child { color: #92400e; font-weight: 700; }
+        @media print {
+          body { padding: 0; }
+          button { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Lista de votantes — ${perfil.nombreConcejal}</h1>
+      <p class="sub">Generado el ${generadoEl}</p>
+      <div class="resumen">
+        <span>Total asignado <strong>${datos.totalAsignado}</strong></span>
+        <span>Registrados <strong>${datos.totalRegistrado}</strong></span>
+        <span>Pendientes <strong>${datos.totalPendiente}</strong></span>
+        <span>Duplicados <strong>${totalDuplicados}</strong></span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th><th>Duplicado</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+      <script>window.onload = () => window.print();</script>
+    </body>
+    </html>
+  `;
+
+  const ventana = window.open('', '_blank');
+  if (!ventana) {
+    alert('El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.');
+    return;
+  }
+  ventana.document.open();
+  ventana.document.write(html);
+  ventana.document.close();
 }
 
 window.renderConcejal = renderConcejal;

@@ -92,12 +92,19 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
 /**
  * DELETE /api/concejal/eliminar/:cedula
  * Elimina una cedula de la lista del concejal logueado (solo la suya).
+ * Si ya fue registrado (paso por comando, mesa, o lo confirmo el propio
+ * concejal), ya no se puede eliminar: hay que conservar el rastro.
  */
 router.delete('/eliminar/:cedula', requiereRol('concejal'), async (req, res) => {
   try {
     const cedula = normalizarCedula(req.params.cedula);
     const db = getFirestore();
     const nombreConcejal = req.usuario.nombreConcejal;
+
+    const registroSnap = await db.collection('registros').doc(cedula).get();
+    if (registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO') {
+      return res.status(403).json({ error: 'No se puede eliminar: esta persona ya fue registrada.' });
+    }
 
     await db.collection('votantesConcejal').doc(`${cedula}__${nombreConcejal}`).delete();
 
