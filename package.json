@@ -1,0 +1,23 @@
+{
+  "name": "sistema-electoral-sja",
+  "version": "1.0.0",
+  "description": "Sistema de control de asistencia y movilizacion electoral - San Jose de los Arroyos",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "import:padron": "node scripts/import-padron.js",
+    "import:concejales": "node scripts/import-concejales.js",
+    "import:votantes-concejal": "node scripts/import-votantes-concejal.js",
+    "create-user": "node scripts/create-user.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.7.0",
+    "google-auth-library": "^9.14.1",
+    "googleapis": "^173.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "xlsx": "^0.18.5"
+  }
+}

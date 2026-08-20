@@ -1,0 +1,155 @@
+:root {
+  --azul: #0f172a;
+  --azul-claro: #1e40af;
+  --verde: #15803d;
+  --rojo: #b91c1c;
+  --gris: #64748b;
+  --fondo: #f1f5f9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--fondo);
+  color: #0f172a;
+}
+
+.pantalla-login {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px;
+  background: var(--azul);
+  color: white;
+}
+
+.pantalla-login h1 { text-align: center; font-size: 1.4rem; }
+
+.tarjeta {
+  background: white;
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+.tarjeta.ok { border-left: 6px solid var(--verde); }
+.tarjeta.alerta { border-left: 6px solid var(--rojo); }
+
+label { display: block; margin-bottom: 12px; font-size: 0.9rem; }
+input[type="text"], input[type="password"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  margin-top: 4px;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+button.primario { background: var(--azul-claro); color: white; width: 100%; }
+button.secundario { background: var(--gris); color: white; }
+button.link { background: transparent; color: var(--gris); font-weight: 400; text-decoration: underline; }
+.tarjeta button[type="submit"] { background: var(--azul-claro); color: white; width: 100%; }
+
+.encabezado {
+  background: var(--azul);
+  color: white;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.encabezado .sub { display: block; font-size: 0.8rem; opacity: 0.8; }
+.encabezado .link { color: #cbd5e1; }
+
+.badge {
+  font-size: 0.75rem;
+  background: rgba(255,255,255,0.15);
+  padding: 4px 8px;
+  border-radius: 999px;
+  margin-right: 12px;
+}
+
+.acciones-header { display: flex; align-items: center; }
+
+.contenido { padding: 16px; max-width: 640px; margin: 0 auto; }
+
+.fila-busqueda { display: flex; gap: 8px; margin-bottom: 16px; }
+.fila-busqueda input { flex: 1; }
+.fila-busqueda button { flex-shrink: 0; background: var(--azul-claro); color: white; }
+
+.grande { font-size: 1.3rem; font-weight: 700; margin: 8px 0; }
+.error { color: var(--rojo); font-size: 0.9rem; }
+.advertencia { color: #b45309; font-weight: 600; }
+.sub { color: var(--gris); font-size: 0.85rem; }
+.oculto { display: none; }
+
+.opciones-concejal { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.opcion { display: flex; align-items: center; gap: 8px; background: #f8fafc; padding: 10px; border-radius: 8px; }
+
+.fila-votante {
+  display: flex;
+  justify-content: space-between;
+  background: white;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+}
+.fila-votante.ok { border-left: 4px solid var(--verde); }
+.fila-votante .estado { color: var(--gris); font-size: 0.8rem; text-align: right; }
+
+.grid-totales {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.grid-totales .tarjeta { text-align: center; }
+.grid-totales .num { display: block; font-size: 1.8rem; font-weight: 700; }
+
+.tabla-simple .fila {
+  display: flex;
+  justify-content: space-between;
+  background: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+}
+
+.modo-busqueda { display: flex; gap: 8px; margin-bottom: 12px; }
+.modo-busqueda .modo {
+  flex: 1;
+  background: #e2e8f0;
+  color: var(--azul);
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.modo-busqueda .modo.activo { background: var(--azul-claro); color: white; }
+
+.fila-votante { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fila-votante .icono-estado { font-size: 1.1rem; color: var(--gris); flex-shrink: 0; }
+.fila-votante.ok .icono-estado { color: var(--verde); }
+.fila-votante .nombre-votante { flex: 1; min-width: 140px; }
+.fila-votante .btn-eliminar { flex-shrink: 0; font-size: 0.85rem; }
+
+.tarjeta .fila-busqueda button[type="submit"] { width: auto; flex-shrink: 0; }
