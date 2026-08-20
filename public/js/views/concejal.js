@@ -134,6 +134,7 @@ async function renderConcejal(root, perfil) {
         <span class="icono-estado">${v.estadoGestion === 'REGISTRADO' ? '✓' : '○'}</span>
         <span class="nombre-votante">
           ${v.nombresApellidos}
+          <span class="sub"> · CI: ${v.cedula}</span>
           ${v.local ? `<span class="sub"> · ${v.local}${v.mesa ? ` — Mesa ${v.mesa}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${v.caudillo}</span>` : ''}
           ${v.duplicado ? `<span class="advertencia-duplicado">⚠ Duplicado en otra lista</span>` : ''}
