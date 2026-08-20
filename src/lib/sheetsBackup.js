@@ -43,7 +43,13 @@ function formatearFechaPY(valor) {
 
 const hojasVerificadas = new Set();
 
-/** Crea la pestaña con encabezados si todavia no existe en el spreadsheet. */
+/**
+ * Crea la pestaña con encabezados si todavia no existe en el spreadsheet.
+ * Si ya existe pero el encabezado tiene MENOS columnas que las esperadas
+ * (ej. se agrego una columna nueva en una version mas reciente del sistema),
+ * lo extiende agregando las que falten al final — nunca reordena ni acorta,
+ * para no romper filas historicas que ya estaban escritas.
+ */
 async function asegurarHoja(sheets, spreadsheetId, nombreHoja, encabezados) {
   if (hojasVerificadas.has(nombreHoja)) return;
 
@@ -61,6 +67,17 @@ async function asegurarHoja(sheets, spreadsheetId, nombreHoja, encabezados) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [encabezados] },
     });
+  } else {
+    const actual = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${nombreHoja}!1:1` });
+    const filaActual = actual.data.values?.[0] || [];
+    if (filaActual.length < encabezados.length) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${nombreHoja}!A1`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [encabezados] },
+      });
+    }
   }
 
   hojasVerificadas.add(nombreHoja);
@@ -83,7 +100,7 @@ async function backupRegistro(registro) {
 
     await asegurarHoja(sheets, sheetId, SHEET_NAME, [
       'Fecha', 'Cedula', 'Orden', 'Nombre', 'Local', 'Mesa', 'Lista preasignada',
-      'Concejal preasignado', 'Lista asignada', 'Concejal asignado', 'Estado', 'Origen', 'Dispositivo',
+      'Concejal preasignado', 'Lista asignada', 'Concejal asignado', 'Estado', 'Origen', 'Dispositivo', 'Tipo',
     ]);
 
     const fila = [
@@ -100,11 +117,12 @@ async function backupRegistro(registro) {
       registro.estadoGestion || '',
       registro.origenRegistro || '',
       registro.dispositivoId || '',
+      registro.tipo || 'REGISTRO',
     ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
-      range: `${SHEET_NAME}!A1:M1`,
+      range: `${SHEET_NAME}!A1:N1`,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: [fila] },

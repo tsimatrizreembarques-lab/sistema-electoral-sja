@@ -37,6 +37,10 @@ async function renderLogin(root) {
 
     await window.DBLocal.guardarSesion(datos.perfil, datos.token);
 
+    // Pedimos permiso de notificaciones aca (gesto del usuario = click en "Ingresar"),
+    // para poder avisar mas adelante si un votante ya fue registrado en otro lugar.
+    window.Notificaciones?.pedirPermisoNotificaciones();
+
     // Para roles de campo, descargamos el paquete local para poder operar offline.
     if (['comando', 'mesa'].includes(datos.perfil.rol)) {
       const paquete = await window.Api.descargarPaqueteLocal();

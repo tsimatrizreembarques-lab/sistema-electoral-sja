@@ -83,12 +83,14 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
   }
 
   if (votante.registroActual?.estadoGestion === 'REGISTRADO') {
+    const historial = window.formatearHistorial(votante.registroActual.historial);
     cont.innerHTML = `
       <div class="tarjeta ok">
         <h3>${votante.nombresApellidos}</h3>
         <p>Orden: ${votante.orden ?? '-'}</p>
         <p>Ya fue registrado: <strong>${votante.registroActual.origenRegistro}</strong></p>
         <p>Hora: ${window.formatearFechaPY(votante.registroActual.fechaHora)}</p>
+        ${historial ? `<p class="sub" style="white-space:pre-line;">Historial:\n${historial}</p>` : ''}
         <p class="sub">¿Confirmás igual el registro en esta mesa?</p>
         <button id="btn-forzar" class="secundario">Sí, confirmar de todas formas</button>
       </div>
@@ -96,6 +98,10 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
     document.getElementById('btn-forzar').addEventListener('click', () => {
       confirmarRegistroMesa(votante, perfil);
     });
+    window.Notificaciones?.avisar(
+      'Votante ya registrado',
+      `${votante.nombresApellidos} ya pasó por: ${votante.registroActual.origenRegistro}`
+    );
     return;
   }
 

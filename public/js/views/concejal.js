@@ -115,7 +115,11 @@ async function renderConcejal(root, perfil) {
       btnVoto.disabled = true;
       const resp = await window.Api.registrarVotante({ cedula, dispositivoId: `concejal-${perfil.usuario}` });
       if (!resp.ok) {
-        alert(resp.datos?.mensaje || resp.datos?.error || 'No se pudo confirmar.');
+        const mensaje = resp.datos?.mensaje || resp.datos?.error || 'No se pudo confirmar.';
+        alert(mensaje);
+        if (resp.status === 409) {
+          window.Notificaciones?.avisar('Votante ya registrado', mensaje);
+        }
         btnVoto.disabled = false;
         return;
       }
@@ -154,6 +158,11 @@ async function renderConcejal(root, perfil) {
           ${v.local ? `<span class="sub"> · ${v.local}${v.mesa ? ` — Mesa ${v.mesa}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${v.caudillo}</span>` : ''}
           ${v.duplicado ? `<span class="advertencia-duplicado">⚠ Duplicado en otra lista</span>` : ''}
+          ${
+            Array.isArray(v.historial) && v.historial.length > 1
+              ? `<span class="sub" title="${window.formatearHistorial(v.historial).replace(/"/g, '&quot;')}"> · ⓘ ${v.historial.length} intentos de registro (mantené tocado para ver)</span>`
+              : ''
+          }
         </span>
         <span class="estado">${
           v.estadoGestion === 'REGISTRADO'

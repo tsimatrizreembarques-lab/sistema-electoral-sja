@@ -193,3 +193,19 @@ window.formatearFechaPY = function (iso) {
     return iso;
   }
 };
+
+// Arma un listado legible del historial de intentos de registro de un votante
+// (registro.historial: cada intento de comando, mesa o concejal, exitoso o no).
+window.formatearHistorial = function (historial) {
+  if (!Array.isArray(historial) || historial.length === 0) return '';
+  const etiquetas = { REGISTRO: 'Registrado', FORZADO: 'Registrado (forzado)', INTENTO_BLOQUEADO: 'Intento bloqueado' };
+  return historial
+    .slice()
+    .sort((a, b) => new Date(a.fechaHora) - new Date(b.fechaHora))
+    .map((h, i) => {
+      const etiqueta = etiquetas[h.tipo] || h.tipo || '';
+      const detalle = h.origenRegistro || h.origenIntento || '';
+      return `${i + 1}. ${etiqueta} — ${detalle} (${window.formatearFechaPY(h.fechaHora)})`;
+    })
+    .join('\n');
+};

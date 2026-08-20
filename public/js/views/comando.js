@@ -98,14 +98,20 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
   }
 
   if (votante.registroActual?.estadoGestion === 'REGISTRADO') {
+    const historial = window.formatearHistorial(votante.registroActual.historial);
     cont.innerHTML = `
       <div class="tarjeta ok">
         <h3>${votante.nombresApellidos}</h3>
         <p>Ya fue registrado: <strong>${votante.registroActual.origenRegistro}</strong></p>
         <p>Hora: ${window.formatearFechaPY(votante.registroActual.fechaHora)}</p>
         <p class="grande">Mesa ${votante.mesa} — ${votante.local}</p>
+        ${historial ? `<p class="sub" style="white-space:pre-line;">Historial:\n${historial}</p>` : ''}
       </div>
     `;
+    window.Notificaciones?.avisar(
+      'Votante ya registrado',
+      `${votante.nombresApellidos} ya pasó por: ${votante.registroActual.origenRegistro}`
+    );
     return;
   }
 

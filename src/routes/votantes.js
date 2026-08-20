@@ -54,10 +54,19 @@ router.get('/:cedula', requiereRol('comando', 'mesa', 'admin'), async (req, res)
   }
 });
 
+/** Describe desde donde se esta intentando registrar, para mensajes e historial. */
+function describirOrigen(usuario) {
+  if (usuario.rol === 'comando') return `Puesto Comando (${usuario.local})`;
+  if (usuario.rol === 'concejal') return `el concejal ${usuario.nombreConcejal}`;
+  return `Mesa ${usuario.mesa} — ${usuario.local}`;
+}
+
 /**
- * Registra (o actualiza, si forzar=true) el paso de un votante por comando o mesa.
- * Un unico estado por votante: PENDIENTE -> REGISTRADO, sin importar cual de los
- * dos puestos lo marque. Si ya estaba REGISTRADO y no se fuerza, devuelve conflicto.
+ * Registra (o actualiza, si forzar=true) el paso de un votante por comando,
+ * mesa o concejal. Un unico estado por votante: PENDIENTE -> REGISTRADO, sin
+ * importar cual de los tres lo marque. Si ya estaba REGISTRADO y no se fuerza,
+ * devuelve conflicto — pero igual queda una traza del intento (historial +
+ * Sheets), para que se sepa que alguien mas tambien intento marcarlo.
  */
 async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsignado, dispositivoId, forzar, fechaHoraCliente }) {
   const db = getFirestore();
@@ -71,9 +80,35 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
 
   const registroRef = db.collection('registros').doc(cedulaNorm);
   const registroSnap = await registroRef.get();
+  const yaEstabaRegistrado = registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO';
 
-  if (registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO' && !forzar) {
+  if (yaEstabaRegistrado && !forzar) {
     const existente = registroSnap.data();
+    const fechaIntento = new Date().toISOString();
+
+    const eventoIntento = {
+      tipo: 'INTENTO_BLOQUEADO',
+      origenIntento: describirOrigen(usuario),
+      fechaHora: fechaIntento,
+      dispositivoId: dispositivoId || null,
+    };
+    await registroRef.update({ historial: admin.firestore.FieldValue.arrayUnion(eventoIntento) });
+
+    // Traza en Sheets del intento bloqueado: nunca bloquea ni hace fallar la respuesta.
+    backupRegistro({
+      cedula: cedulaNorm,
+      nombresApellidos: existente.nombresApellidos,
+      local: existente.local,
+      mesa: existente.mesa,
+      listaAsignada: existente.listaAsignada,
+      concejalAsignado: existente.concejalAsignado,
+      estadoGestion: 'INTENTO_BLOQUEADO',
+      origenRegistro: `Intento desde ${eventoIntento.origenIntento} — ya estaba registrado por ${existente.origenRegistro}`,
+      fechaHora: fechaIntento,
+      dispositivoId,
+      tipo: 'INTENTO_BLOQUEADO',
+    }).catch(() => {});
+
     return {
       ok: false,
       codigo: 409,
@@ -110,6 +145,9 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
       ? `Confirmado por el concejal ${usuario.nombreConcejal} (reporte manual)`
       : `Registrado como Veedor Mesa ${usuario.mesa} — ${usuario.local}`;
 
+  const tipo = yaEstabaRegistrado ? 'FORZADO' : 'REGISTRO';
+  const fechaHora = fechaHoraCliente || new Date().toISOString();
+
   const registro = {
     cedula: cedulaNorm,
     orden: padron.orden ?? null,
@@ -122,12 +160,21 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     concejalAsignado: concejalFinal,
     estadoGestion: 'REGISTRADO',
     origenRegistro,
-    fechaHora: fechaHoraCliente || new Date().toISOString(),
+    tipo,
+    fechaHora,
     fechaHoraServidor: admin.firestore.FieldValue.serverTimestamp(),
     dispositivoId: dispositivoId || null,
   };
 
   await registroRef.set(registro, { merge: true });
+  await registroRef.update({
+    historial: admin.firestore.FieldValue.arrayUnion({
+      tipo,
+      origenRegistro,
+      fechaHora,
+      dispositivoId: dispositivoId || null,
+    }),
+  });
 
   // Respaldo en Google Sheets: nunca bloquea ni hace fallar el registro principal.
   backupRegistro(registro).catch(() => {});
