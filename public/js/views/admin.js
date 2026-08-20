@@ -28,6 +28,14 @@ async function renderAdmin(root, perfil) {
       .join('')}</div>`;
   }
 
+  function tablaPorMesa(objeto) {
+    const entradas = Object.entries(objeto).sort((a, b) => b[1].total - a[1].total);
+    if (entradas.length === 0) return '<p class="sub">Sin datos aún.</p>';
+    return `<div class="tabla-simple">${entradas
+      .map(([k, c]) => `<div class="fila"><span>${k}</span><strong>${c.registrados}/${c.total}</strong></div>`)
+      .join('')}</div>`;
+  }
+
   async function cargar() {
     const { ok, datos } = await window.Api.dashboardAdmin();
     if (!ok) return;
@@ -42,7 +50,7 @@ async function renderAdmin(root, perfil) {
     `;
 
     document.getElementById('por-local').innerHTML = tabla(datos.porLocal);
-    document.getElementById('por-mesa').innerHTML = tabla(datos.porMesa);
+    document.getElementById('por-mesa').innerHTML = tablaPorMesa(datos.porMesa);
     document.getElementById('por-concejal').innerHTML = tabla(datos.porConcejal);
   }
 

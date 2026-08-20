@@ -10,6 +10,9 @@ async function renderConcejal(root, perfil) {
     <main class="contenido">
       <div id="resumen" class="tarjeta"></div>
 
+      <h3>Por mesa</h3>
+      <div id="por-mesa"></div>
+
       <div class="tarjeta">
         <h3>Agregar votante</h3>
         <form id="form-agregar" class="fila-busqueda">
@@ -93,6 +96,13 @@ async function renderConcejal(root, perfil) {
       <p>Registrados: <strong>${datos.totalRegistrado}</strong> · Pendientes: <strong>${datos.totalPendiente}</strong></p>
     `;
 
+    const entradasPorMesa = Object.entries(datos.porMesa || {}).sort((a, b) => b[1].total - a[1].total);
+    document.getElementById('por-mesa').innerHTML = entradasPorMesa.length === 0
+      ? '<p class="sub">Sin datos aún.</p>'
+      : `<div class="tabla-simple">${entradasPorMesa
+          .map(([clave, c]) => `<div class="fila"><span>${clave}</span><strong>${c.registrados}/${c.total}</strong></div>`)
+          .join('')}</div>`;
+
     document.getElementById('lista').innerHTML = datos.votantes
       .map(
         (v) => `
@@ -100,6 +110,7 @@ async function renderConcejal(root, perfil) {
         <span class="icono-estado">${v.estadoGestion === 'REGISTRADO' ? '✓' : '○'}</span>
         <span class="nombre-votante">
           ${v.nombresApellidos}
+          ${v.local ? `<span class="sub"> · ${v.local}${v.mesa ? ` — Mesa ${v.mesa}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${v.caudillo}</span>` : ''}
         </span>
         <span class="estado">${

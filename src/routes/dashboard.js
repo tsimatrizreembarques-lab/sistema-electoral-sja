@@ -25,6 +25,14 @@ router.get('/admin', requiereRol('admin'), async (req, res) => {
     const porConcejal = {};
     let totalRegistrados = 0;
 
+    // Total del padron por mesa (denominador), para poder mostrar "registrados/total".
+    padronSnap.forEach((doc) => {
+      const p = doc.data();
+      const claveMesa = `${p.local} - Mesa ${p.mesa}`;
+      if (!porMesa[claveMesa]) porMesa[claveMesa] = { registrados: 0, total: 0 };
+      porMesa[claveMesa].total += 1;
+    });
+
     registrosSnap.forEach((doc) => {
       const r = doc.data();
       if (r.estadoGestion !== 'REGISTRADO') return;
@@ -33,7 +41,8 @@ router.get('/admin', requiereRol('admin'), async (req, res) => {
       porLocal[r.local] = (porLocal[r.local] || 0) + 1;
 
       const claveMesa = `${r.local} - Mesa ${r.mesa}`;
-      porMesa[claveMesa] = (porMesa[claveMesa] || 0) + 1;
+      if (!porMesa[claveMesa]) porMesa[claveMesa] = { registrados: 0, total: 0 };
+      porMesa[claveMesa].registrados += 1;
 
       if (r.concejalAsignado) {
         porConcejal[r.concejalAsignado] = (porConcejal[r.concejalAsignado] || 0) + 1;
@@ -109,12 +118,25 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       }
     }
 
+    const todosLosVotantes = [...registradosConCaudillo, ...pendientes];
+
+    // Desglose por mesa: cuantos de MIS votantes ya votaron vs el total asignado en esa mesa.
+    const porMesa = {};
+    todosLosVotantes.forEach((v) => {
+      if (!v.local || !v.mesa) return;
+      const clave = `${v.local} - Mesa ${v.mesa}`;
+      if (!porMesa[clave]) porMesa[clave] = { registrados: 0, total: 0 };
+      porMesa[clave].total += 1;
+      if (v.estadoGestion === 'REGISTRADO') porMesa[clave].registrados += 1;
+    });
+
     res.json({
       nombreConcejal,
       totalAsignado: registrados.length + pendientes.length,
       totalRegistrado: registrados.length,
       totalPendiente: pendientes.length,
-      votantes: [...registradosConCaudillo, ...pendientes],
+      porMesa,
+      votantes: todosLosVotantes,
     });
   } catch (error) {
     console.error('Error en dashboard concejal:', error);
