@@ -7,6 +7,7 @@
   --gris-oscuro: #3f3f46;
   --gris: #71717a;
   --gris-claro: #e4e4e7;
+  --verde: #15803d;
   --fondo: #f7f5f5;
 }
 
@@ -116,7 +117,7 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
   margin-bottom: 6px;
   font-size: 0.9rem;
 }
-.fila-votante.ok { border-left: 4px solid var(--negro); }
+.fila-votante.ok { border-left: 4px solid var(--verde); background: #f0fdf4; }
 .fila-votante.duplicado { background: #fef9c3; border-left: 4px solid #ca8a04; }
 .fila-votante .estado { color: var(--gris); font-size: 0.8rem; text-align: right; }
 .advertencia-duplicado { display: block; color: #92400e; font-size: 0.75rem; font-weight: 600; }
@@ -154,7 +155,7 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
 
 .fila-votante { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .fila-votante .icono-estado { font-size: 1.1rem; color: var(--gris); flex-shrink: 0; }
-.fila-votante.ok .icono-estado { color: var(--negro); }
+.fila-votante.ok .icono-estado { color: var(--verde); }
 .fila-votante .nombre-votante { flex: 1; min-width: 140px; }
 .fila-votante .btn-eliminar { flex-shrink: 0; font-size: 0.85rem; }
 
