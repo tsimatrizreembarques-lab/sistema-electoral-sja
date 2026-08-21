@@ -34,11 +34,16 @@ router.get('/buscar/:cedula', requiereRol('concejal'), async (req, res) => {
       .filter((e) => e.nombreConcejal !== nombreConcejal)
       .map((e) => e.nombreConcejal);
 
+    const registroSnap = await db.collection('registros').doc(cedula).get();
+    const yaRegistrado = registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO';
+
     res.json({
       cedula,
       nombresApellidos: padron.nombresApellidos,
       yaEnMiLista,
       otrosConcejales,
+      yaRegistrado,
+      origenRegistro: yaRegistrado ? registroSnap.data().origenRegistro : null,
     });
   } catch (error) {
     console.error('Error al buscar cedula para concejal:', error);
@@ -66,6 +71,13 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
       return res.status(404).json({ error: 'Esa cedula no figura en el padron de SJA.' });
     }
     const padron = padronSnap.data();
+
+    const registroSnap = await db.collection('registros').doc(cedula).get();
+    if (registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO') {
+      return res.status(403).json({
+        error: `No se puede agregar: esta persona ya fue registrada (${registroSnap.data().origenRegistro}).`,
+      });
+    }
 
     const concejalSnap = await db.collection('concejales').doc(nombreConcejal).get();
     const lista = concejalSnap.exists ? concejalSnap.data().lista : null;

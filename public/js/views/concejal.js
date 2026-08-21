@@ -70,6 +70,15 @@ async function renderConcejal(root, perfil) {
       prev.innerHTML = `<div class="tarjeta alerta"><p>${datos.nombresApellidos}</p><p class="sub">Ya está en tu lista.</p></div>`;
       return;
     }
+    if (datos.yaRegistrado) {
+      prev.innerHTML = `
+        <div class="tarjeta alerta">
+          <p>${datos.nombresApellidos}</p>
+          <p class="sub">Ya fue registrado: ${datos.origenRegistro}. No se puede agregar a una lista después de votar.</p>
+        </div>
+      `;
+      return;
+    }
     let aviso = '';
     if (datos.otrosConcejales.length > 0) {
       aviso = `<p class="advertencia">Ya figura en la lista de: ${datos.otrosConcejales.join(', ')}. Se resolverá en el puesto de comando el día de la elección.</p>`;
