@@ -1,4 +1,4 @@
-let modoBusquedaMesa = 'orden'; // 'orden' | 'cedula'
+let modoBusquedaMesa = 'orden'; // 'orden' | 'cedula' | 'nombre'
 
 async function renderMesa(root, perfil) {
   root.innerHTML = `
@@ -17,6 +17,7 @@ async function renderMesa(root, perfil) {
       <div class="modo-busqueda">
         <button type="button" id="modo-orden" class="modo activo">N° de Orden</button>
         <button type="button" id="modo-cedula" class="modo">Cédula</button>
+        <button type="button" id="modo-nombre" class="modo">Apellido y Nombre</button>
       </div>
       <form id="form-buscar" class="fila-busqueda">
         <input id="valor-busqueda" type="text" inputmode="numeric" placeholder="Número de orden" autofocus />
@@ -47,19 +48,37 @@ async function renderMesa(root, perfil) {
     modoBusquedaMesa = nuevoModo;
     document.getElementById('modo-orden').classList.toggle('activo', nuevoModo === 'orden');
     document.getElementById('modo-cedula').classList.toggle('activo', nuevoModo === 'cedula');
+    document.getElementById('modo-nombre').classList.toggle('activo', nuevoModo === 'nombre');
     const input = document.getElementById('valor-busqueda');
-    input.placeholder = nuevoModo === 'orden' ? 'Número de orden' : 'Número de cédula';
+    if (nuevoModo === 'orden') {
+      input.placeholder = 'Número de orden';
+      input.inputMode = 'numeric';
+    } else if (nuevoModo === 'cedula') {
+      input.placeholder = 'Número de cédula';
+      input.inputMode = 'numeric';
+    } else {
+      input.placeholder = 'Apellido y nombre';
+      input.inputMode = 'text';
+    }
     input.value = '';
+    document.getElementById('resultado').innerHTML = '';
     input.focus();
   }
 
   document.getElementById('modo-orden').addEventListener('click', () => actualizarModo('orden'));
   document.getElementById('modo-cedula').addEventListener('click', () => actualizarModo('cedula'));
+  document.getElementById('modo-nombre').addEventListener('click', () => actualizarModo('nombre'));
 
   document.getElementById('form-buscar').addEventListener('submit', async (e) => {
     e.preventDefault();
     const valor = document.getElementById('valor-busqueda').value.trim();
     if (!valor) return;
+
+    if (modoBusquedaMesa === 'nombre') {
+      const resultados = await window.DBLocal.buscarVotantesPorNombre(valor);
+      renderResultadosPorNombre(resultados, perfil);
+      return;
+    }
 
     let votante = modoBusquedaMesa === 'orden'
       ? await window.DBLocal.buscarVotantePorOrden(valor)
@@ -86,6 +105,47 @@ async function renderMesa(root, perfil) {
     }
 
     renderResultadoMesa(votante, valor, perfil);
+  });
+}
+
+/** Lista de coincidencias por nombre — al tocar una, se abre su detalle completo. */
+function renderResultadosPorNombre(resultados, perfil) {
+  const cont = document.getElementById('resultado');
+
+  if (resultados.length === 0) {
+    cont.innerHTML = `<div class="tarjeta alerta">No se encontraron coincidencias en esta mesa.</div>`;
+    return;
+  }
+
+  cont.innerHTML = `
+    <div class="tabla-simple" id="lista-resultados-nombre">
+      ${resultados
+        .map(
+          (p) => `
+        <div class="fila fila-clickeable" data-cedula="${p.cedula}">
+          <span>${p.nombresApellidos}</span>
+          <span class="sub">Orden ${p.orden ?? '-'}</span>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  document.getElementById('lista-resultados-nombre').addEventListener('click', async (e) => {
+    const fila = e.target.closest('.fila-clickeable');
+    if (!fila) return;
+    const cedula = fila.dataset.cedula;
+
+    let votante = await window.DBLocal.buscarVotante(cedula);
+    if (votante && navigator.onLine) {
+      const { ok, datos } = await window.Api.buscarVotante(cedula);
+      if (ok && datos.registroActual) {
+        votante = { ...votante, registroActual: datos.registroActual };
+        await window.DBLocal.marcarRegistradoLocalmente(datos.registroActual);
+      }
+    }
+
+    renderResultadoMesa(votante, cedula, perfil);
   });
 }
 

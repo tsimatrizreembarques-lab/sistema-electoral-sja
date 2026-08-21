@@ -6,6 +6,15 @@
 const DB_NAME = 'electoral-sja-local';
 const DB_VERSION = 2;
 
+/** Mayusculas, sin acentos, sin espacios de mas — para comparar nombres. */
+function normalizarTexto(texto) {
+  return String(texto ?? '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+
 function abrirDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -146,6 +155,26 @@ const DBLocal = {
     const padron = await getPorIndiceUnico('padron', 'porOrden', Number(orden));
     if (!padron) return null;
     return this.buscarVotante(padron.cedula);
+  },
+
+  /**
+   * Busca por apellido/nombre (parcial, sin importar el orden de las
+   * palabras ni mayusculas/acentos). Recorre todo el padron local (es chico:
+   * el de una mesa/local), asi que no hace falta un indice especial.
+   * Devuelve varias coincidencias posibles, no una sola.
+   */
+  async buscarVotantesPorNombre(texto) {
+    const palabras = normalizarTexto(texto).split(/\s+/).filter(Boolean);
+    if (palabras.length === 0) return [];
+
+    const todos = await getTodos('padron');
+    return todos
+      .filter((p) => {
+        const nombre = normalizarTexto(p.nombresApellidos);
+        return palabras.every((palabra) => nombre.includes(palabra));
+      })
+      .sort((a, b) => (a.nombresApellidos || '').localeCompare(b.nombresApellidos || ''))
+      .slice(0, 30);
   },
 
   /**

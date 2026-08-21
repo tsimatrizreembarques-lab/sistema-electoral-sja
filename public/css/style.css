@@ -162,6 +162,8 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
   margin-bottom: 4px;
   font-size: 0.9rem;
 }
+.fila-clickeable { cursor: pointer; }
+.fila-clickeable:active { background: var(--fondo); }
 
 .modo-busqueda { display: flex; gap: 8px; margin-bottom: 12px; }
 .modo-busqueda .modo {
