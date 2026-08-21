@@ -3,6 +3,7 @@ const { getFirestore, admin } = require('../lib/firestore');
 const { requiereRol } = require('../lib/auth');
 const { normalizarCedula } = require('../lib/normalizar');
 const { backupRegistro } = require('../lib/sheetsBackup');
+const { statsRef } = require('../lib/stats');
 
 const router = express.Router();
 
@@ -153,6 +154,40 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
       },
       { merge: true }
     );
+
+    // Contadores del dashboard admin (stats/resumen): se actualizan aca mismo,
+    // en la misma transaccion, para no tener que escanear colecciones enteras
+    // cada vez que el admin mira su pantalla.
+    const claveMesa = `${padron.local} - Mesa ${padron.mesa}`;
+    let statsUpdate = null;
+
+    if (!yaEstabaRegistrado) {
+      // Persona nueva registrada: suma al total.
+      statsUpdate = {
+        totalRegistrados: admin.firestore.FieldValue.increment(1),
+        porLocal: { [padron.local]: admin.firestore.FieldValue.increment(1) },
+        porMesa: { [claveMesa]: admin.firestore.FieldValue.increment(1) },
+      };
+      if (concejalFinal) {
+        statsUpdate.porConcejal = { [concejalFinal]: admin.firestore.FieldValue.increment(1) };
+      }
+    } else {
+      // Forzado: la persona ya estaba contada (mismo local/mesa de siempre).
+      // Solo se ajusta el conteo por concejal si cambio a quien quedo asignado.
+      const concejalAnterior = registroSnap.data().concejalAsignado;
+      if (concejalAnterior !== concejalFinal) {
+        const porConcejalDelta = {};
+        if (concejalAnterior) porConcejalDelta[concejalAnterior] = admin.firestore.FieldValue.increment(-1);
+        if (concejalFinal) porConcejalDelta[concejalFinal] = admin.firestore.FieldValue.increment(1);
+        if (Object.keys(porConcejalDelta).length > 0) {
+          statsUpdate = { porConcejal: porConcejalDelta };
+        }
+      }
+    }
+
+    if (statsUpdate) {
+      tx.set(statsRef(db), statsUpdate, { merge: true });
+    }
 
     return { bloqueado: false, registro };
   });

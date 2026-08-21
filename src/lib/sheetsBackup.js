@@ -206,4 +206,24 @@ async function sincronizarListasConcejales(db) {
   }
 }
 
-module.exports = { backupRegistro, sincronizarListasConcejales };
+let debounceTimeout = null;
+let debounceDb = null;
+
+/**
+ * Version "debounced" de sincronizarListasConcejales: si un concejal agrega
+ * o elimina varias personas seguidas, esto agrupa todas esas acciones en UNA
+ * sola sincronizacion (unos segundos despues de la ultima), en vez de
+ * escanear votantesConcejal + registros completas en cada click.
+ */
+function sincronizarListasConcejalesDebounced(db) {
+  debounceDb = db;
+  if (debounceTimeout) return; // ya hay una corrida programada, esta se suma a esa misma
+  debounceTimeout = setTimeout(() => {
+    debounceTimeout = null;
+    const dbParaUsar = debounceDb;
+    debounceDb = null;
+    sincronizarListasConcejales(dbParaUsar).catch(() => {});
+  }, 8000);
+}
+
+module.exports = { backupRegistro, sincronizarListasConcejales, sincronizarListasConcejalesDebounced };

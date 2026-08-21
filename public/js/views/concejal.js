@@ -197,7 +197,7 @@ async function renderConcejal(root, perfil) {
   }
 
   await cargar();
-  setInterval(cargar, 15000); // actualizacion en vivo cada 15s mientras haya señal
+  setInterval(cargar, 25000); // actualizacion en vivo mientras haya señal
 }
 
 /**

@@ -72,7 +72,7 @@ async function renderAdmin(root, perfil) {
   }
 
   await cargar();
-  setInterval(cargar, 15000);
+  setInterval(cargar, 45000); // el dashboard admin ahora lee un unico documento resumen, pero no hace falta mas seguido que esto
 }
 
 /**

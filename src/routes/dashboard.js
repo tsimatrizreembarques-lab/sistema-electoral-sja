@@ -1,70 +1,45 @@
 const express = require('express');
 const { getFirestore } = require('../lib/firestore');
 const { requiereRol } = require('../lib/auth');
+const { statsRef } = require('../lib/stats');
 
 const router = express.Router();
 
 /**
  * GET /api/dashboard/admin
  * Vista global: totales por local, por mesa, por concejal, y alertas.
+ * Lee el documento stats/resumen (mantenido al dia por cada registro y cada
+ * alta/baja de lista) en vez de escanear padron/registros/votantesConcejal
+ * completas — eso evita ~12.000+ lecturas de Firestore en CADA actualizacion
+ * del dashboard (se refresca solo cada tantos segundos).
  */
 router.get('/admin', requiereRol('admin'), async (req, res) => {
   try {
     const db = getFirestore();
+    const snap = await statsRef(db).get();
+    const stats = snap.exists ? snap.data() : {};
 
-    const [padronSnap, registrosSnap, votantesConcejalSnap] = await Promise.all([
-      db.collection('padron').get(),
-      db.collection('registros').get(),
-      db.collection('votantesConcejal').get(),
-    ]);
+    const totalPadron = stats.totalPadron || 0;
+    const totalRegistrados = stats.totalRegistrados || 0;
+    const padronPorMesa = stats.padronPorMesa || {};
+    const registradosPorMesa = stats.porMesa || {};
 
-    const totalPadron = padronSnap.size;
-
-    const porLocal = {};
     const porMesa = {};
-    const porConcejal = {};
-    let totalRegistrados = 0;
-
-    // Total del padron por mesa (denominador), para poder mostrar "registrados/total".
-    padronSnap.forEach((doc) => {
-      const p = doc.data();
-      const claveMesa = `${p.local} - Mesa ${p.mesa}`;
-      if (!porMesa[claveMesa]) porMesa[claveMesa] = { registrados: 0, total: 0 };
-      porMesa[claveMesa].total += 1;
+    new Set([...Object.keys(padronPorMesa), ...Object.keys(registradosPorMesa)]).forEach((clave) => {
+      porMesa[clave] = {
+        registrados: registradosPorMesa[clave] || 0,
+        total: padronPorMesa[clave] || 0,
+      };
     });
-
-    registrosSnap.forEach((doc) => {
-      const r = doc.data();
-      if (r.estadoGestion !== 'REGISTRADO') return;
-      totalRegistrados += 1;
-
-      porLocal[r.local] = (porLocal[r.local] || 0) + 1;
-
-      const claveMesa = `${r.local} - Mesa ${r.mesa}`;
-      if (!porMesa[claveMesa]) porMesa[claveMesa] = { registrados: 0, total: 0 };
-      porMesa[claveMesa].registrados += 1;
-
-      if (r.concejalAsignado) {
-        porConcejal[r.concejalAsignado] = (porConcejal[r.concejalAsignado] || 0) + 1;
-      }
-    });
-
-    // Duplicados entre listas de concejales (misma cedula en +1 lista).
-    const conteoPorCedula = {};
-    votantesConcejalSnap.forEach((doc) => {
-      const v = doc.data();
-      conteoPorCedula[v.cedula] = (conteoPorCedula[v.cedula] || 0) + 1;
-    });
-    const duplicados = Object.entries(conteoPorCedula).filter(([, count]) => count > 1).length;
 
     res.json({
       totalPadron,
       totalRegistrados,
       totalPendientes: totalPadron - totalRegistrados,
-      porLocal,
+      porLocal: stats.porLocal || {},
       porMesa,
-      porConcejal,
-      duplicadosEntreListas: duplicados,
+      porConcejal: stats.porConcejal || {},
+      duplicadosEntreListas: stats.duplicadosEntreListas || 0,
     });
   } catch (error) {
     console.error('Error en dashboard admin:', error);

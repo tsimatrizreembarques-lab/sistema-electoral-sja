@@ -7,6 +7,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 const { getFirestore } = require('../src/lib/firestore');
 const { normalizarCedula } = require('../src/lib/normalizar');
+const { recalcularDenominadoresPadron } = require('../src/lib/stats');
 
 async function main() {
   const filePath = process.argv[2];
@@ -56,6 +57,11 @@ async function main() {
   }
 
   console.log(`Importacion de padron completada. Importados: ${total}. Omitidos (datos incompletos): ${omitidos}.`);
+
+  console.log('Recalculando denominadores en stats/resumen (total del padron por local/mesa)...');
+  const totales = await recalcularDenominadoresPadron(db);
+  console.log(`stats/resumen actualizado. Total padron: ${totales.totalPadron}.`);
+
   process.exit(0);
 }
 

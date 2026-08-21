@@ -1,8 +1,9 @@
 const express = require('express');
-const { getFirestore } = require('../lib/firestore');
+const { getFirestore, admin } = require('../lib/firestore');
 const { requiereRol } = require('../lib/auth');
 const { normalizarCedula } = require('../lib/normalizar');
-const { sincronizarListasConcejales } = require('../lib/sheetsBackup');
+const { sincronizarListasConcejalesDebounced } = require('../lib/sheetsBackup');
+const { statsRef } = require('../lib/stats');
 
 const router = express.Router();
 
@@ -82,6 +83,11 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
     const concejalSnap = await db.collection('concejales').doc(nombreConcejal).get();
     const lista = concejalSnap.exists ? concejalSnap.data().lista : null;
 
+    // Se mira cuantos concejales tenian esta cedula ANTES de agregar, para
+    // saber si esta alta crea un duplicado nuevo (contador del dashboard admin).
+    const existentesSnap = await db.collection('votantesConcejal').where('cedula', '==', cedula).get();
+    const yaTeniaEsteConcejal = existentesSnap.docs.some((d) => d.data().nombreConcejal === nombreConcejal);
+
     const ref = db.collection('votantesConcejal').doc(`${cedula}__${nombreConcejal}`);
     await ref.set({
       cedula,
@@ -91,8 +97,13 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
       nombresApellidos: padron.nombresApellidos,
     });
 
+    if (!yaTeniaEsteConcejal && existentesSnap.size === 1) {
+      // Antes habia exactamente otro concejal; con este ya son 2: duplicado nuevo.
+      await statsRef(db).set({ duplicadosEntreListas: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    }
+
     // Respaldo en Sheets: nunca bloquea ni hace fallar el alta principal.
-    sincronizarListasConcejales(db).catch(() => {});
+    sincronizarListasConcejalesDebounced(db);
 
     res.status(201).json({ ok: true, cedula, nombresApellidos: padron.nombresApellidos });
   } catch (error) {
@@ -118,10 +129,19 @@ router.delete('/eliminar/:cedula', requiereRol('concejal'), async (req, res) => 
       return res.status(403).json({ error: 'No se puede eliminar: esta persona ya fue registrada.' });
     }
 
+    // Se mira cuantos concejales tenian esta cedula ANTES de eliminar, para
+    // saber si esta baja resuelve un duplicado (contador del dashboard admin).
+    const existentesSnap = await db.collection('votantesConcejal').where('cedula', '==', cedula).get();
+
     await db.collection('votantesConcejal').doc(`${cedula}__${nombreConcejal}`).delete();
 
+    if (existentesSnap.size === 2 && existentesSnap.docs.some((d) => d.data().nombreConcejal === nombreConcejal)) {
+      // Habia exactamente 2 (incluyendo este); ahora queda 1: se resuelve el duplicado.
+      await statsRef(db).set({ duplicadosEntreListas: admin.firestore.FieldValue.increment(-1) }, { merge: true });
+    }
+
     // Respaldo en Sheets: nunca bloquea ni hace fallar la baja principal.
-    sincronizarListasConcejales(db).catch(() => {});
+    sincronizarListasConcejalesDebounced(db);
 
     res.json({ ok: true });
   } catch (error) {
