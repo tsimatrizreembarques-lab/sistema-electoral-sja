@@ -99,10 +99,13 @@ async function renderConcejal(root, perfil) {
     const btnEliminar = e.target.closest('.btn-eliminar');
     if (btnEliminar) {
       const cedula = btnEliminar.dataset.cedula;
-      if (!confirm('¿Eliminar a esta persona de tu lista?')) return;
+      const confirmado = await window.Notificaciones.confirmarModal(
+        'Eliminar votante', '¿Eliminar a esta persona de tu lista?', 'Eliminar'
+      );
+      if (!confirmado) return;
       const resp = await window.Api.concejalEliminar(cedula);
       if (!resp.ok) {
-        alert(resp.datos?.error || 'No se pudo eliminar.');
+        window.Notificaciones.mostrarModal('No se pudo eliminar', resp.datos?.error || 'No se pudo eliminar.');
       }
       await cargar();
       return;
@@ -111,15 +114,17 @@ async function renderConcejal(root, perfil) {
     const btnVoto = e.target.closest('.btn-registrar');
     if (btnVoto) {
       const cedula = btnVoto.dataset.cedula;
-      if (!confirm('¿Confirmás que esta persona ya pasó por comando o mesa? Se va a sumar al conteo oficial.')) return;
+      const confirmado = await window.Notificaciones.confirmarModal(
+        'Confirmar registro',
+        '¿Confirmás que esta persona ya pasó por comando o mesa? Se va a sumar al conteo oficial.',
+        'Sí, registrar'
+      );
+      if (!confirmado) return;
       btnVoto.disabled = true;
       const resp = await window.Api.registrarVotante({ cedula, dispositivoId: `concejal-${perfil.usuario}` });
       if (!resp.ok) {
         const mensaje = resp.datos?.mensaje || resp.datos?.error || 'No se pudo confirmar.';
-        alert(mensaje);
-        if (resp.status === 409) {
-          window.Notificaciones?.avisar('Votante ya registrado', mensaje);
-        }
+        window.Notificaciones.avisar(resp.status === 409 ? 'Votante ya registrado' : 'No se pudo confirmar', mensaje);
         btnVoto.disabled = false;
         return;
       }
@@ -266,7 +271,10 @@ function generarPDFLista(datos, perfil) {
 
   const ventana = window.open('', '_blank');
   if (!ventana) {
-    alert('El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.');
+    window.Notificaciones.mostrarModal(
+      'Ventana bloqueada',
+      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
+    );
     return;
   }
   ventana.document.open();
