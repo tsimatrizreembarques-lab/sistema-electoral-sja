@@ -42,6 +42,10 @@ const Api = {
     return this._fetch('/api/dashboard/admin');
   },
 
+  dashboardAdminListas() {
+    return this._fetch('/api/dashboard/admin/listas');
+  },
+
   dashboardConcejal() {
     return this._fetch('/api/dashboard/concejal');
   },

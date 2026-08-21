@@ -73,6 +73,79 @@ router.get('/admin', requiereRol('admin'), async (req, res) => {
 });
 
 /**
+ * GET /api/dashboard/admin/listas
+ * Detalle completo (no agregado) de TODAS las listas de TODOS los concejales,
+ * para que el admin pueda generar un reporte/PDF. Incluye local/mesa (via
+ * padron), estado actual, y marca de duplicado (misma cedula en +1 lista).
+ */
+router.get('/admin/listas', requiereRol('admin'), async (req, res) => {
+  try {
+    const db = getFirestore();
+
+    const [votantesConcejalSnap, registrosSnap] = await Promise.all([
+      db.collection('votantesConcejal').get(),
+      db.collection('registros').select('cedula', 'estadoGestion', 'origenRegistro').get(),
+    ]);
+
+    const registroPorCedula = {};
+    registrosSnap.forEach((doc) => {
+      const r = doc.data();
+      registroPorCedula[r.cedula] = r;
+    });
+
+    const votantes = votantesConcejalSnap.docs.map((d) => d.data());
+
+    const conteoPorCedula = {};
+    votantes.forEach((v) => {
+      conteoPorCedula[v.cedula] = (conteoPorCedula[v.cedula] || 0) + 1;
+    });
+
+    // Local/mesa no se guardan en votantesConcejal: se resuelven contra el padron en lotes.
+    const cedulasUnicas = [...new Set(votantes.map((v) => v.cedula))];
+    const padronPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < cedulasUnicas.length; i += LOTE) {
+      const lote = cedulasUnicas.slice(i, i + LOTE);
+      if (lote.length === 0) continue;
+      const snap = await db.collection('padron').where('cedula', 'in', lote).get();
+      snap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+    }
+
+    const lista = votantes
+      .sort((a, b) => (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '') || String(a.cedula).localeCompare(String(b.cedula)))
+      .map((v) => {
+        const padron = padronPorCedula[v.cedula] || {};
+        const registro = registroPorCedula[v.cedula];
+        const registrado = registro?.estadoGestion === 'REGISTRADO';
+        return {
+          nombreConcejal: v.nombreConcejal,
+          lista: v.lista ?? null,
+          cedula: v.cedula,
+          nombresApellidos: v.nombresApellidos || padron.nombresApellidos || '',
+          local: padron.local || null,
+          mesa: padron.mesa ?? null,
+          caudillo: v.caudillo || null,
+          estadoGestion: registrado ? 'REGISTRADO' : 'PENDIENTE',
+          origenRegistro: registrado ? registro.origenRegistro : null,
+          duplicado: (conteoPorCedula[v.cedula] || 0) > 1,
+        };
+      });
+
+    const cedulasDuplicadas = new Set(lista.filter((v) => v.duplicado).map((v) => v.cedula)).size;
+
+    res.json({
+      generadoEn: new Date().toISOString(),
+      total: lista.length,
+      duplicados: cedulasDuplicadas,
+      lista,
+    });
+  } catch (error) {
+    console.error('Error al generar listado de concejales para admin:', error);
+    res.status(500).json({ error: 'Error interno al generar el listado.' });
+  }
+});
+
+/**
  * GET /api/dashboard/concejal
  * Vista individual: solo los votantes donde el concejal quedo como ASIGNADO
  * (el confirmado en comando/mesa, no el simple preasignado que pudo quedar ambiguo),
