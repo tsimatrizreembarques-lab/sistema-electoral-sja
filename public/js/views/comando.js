@@ -63,10 +63,21 @@ async function renderComando(root, perfil) {
     // Registrar: offline-first, siempre busca primero en la base local del dispositivo.
     let votante = await window.DBLocal.buscarVotante(cedulaLimpia);
 
-    // Si hay señal, se refresca el estado contra el servidor: otro dispositivo
-    // (ej. una Mesa) puede haber registrado a esta persona despues de que este
-    // dispositivo descargo su paquete local, y el cache local no se entera solo.
-    if (votante && navigator.onLine) {
+    if (!votante && navigator.onLine) {
+      // No esta en el paquete local: puede ser que se haya agregado al padron
+      // DESPUES de que este dispositivo inicio sesion (el paquete se descarga
+      // una sola vez, al loguearse). Se busca en el servidor antes de decir
+      // que no existe, y si corresponde a este mismo local, se guarda para
+      // quedar disponible offline de ahi en mas.
+      const { ok, datos } = await window.Api.buscarVotante(cedulaLimpia);
+      if (ok && datos.local === perfil.local) {
+        await window.DBLocal.guardarVotanteDescubierto(datos);
+        votante = await window.DBLocal.buscarVotante(cedulaLimpia);
+      }
+    } else if (votante && navigator.onLine) {
+      // Si hay señal, se refresca el estado contra el servidor: otro dispositivo
+      // (ej. una Mesa) puede haber registrado a esta persona despues de que este
+      // dispositivo descargo su paquete local, y el cache local no se entera solo.
       const { ok, datos } = await window.Api.buscarVotante(cedulaLimpia);
       if (ok && datos.registroActual) {
         votante = { ...votante, registroActual: datos.registroActual };

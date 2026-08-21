@@ -148,6 +148,21 @@ const DBLocal = {
     return this.buscarVotante(padron.cedula);
   },
 
+  /**
+   * Guarda en el cache local un votante que no estaba en el paquete
+   * descargado al iniciar sesion (ej. se agrego al padron despues). Asi
+   * queda disponible offline de ahi en mas, sin esperar a un nuevo login.
+   */
+  async guardarVotanteDescubierto({ cedula, orden, nombresApellidos, local, mesa, preasignados, registroActual }) {
+    await put('padron', { cedula, orden, nombresApellidos, local, mesa });
+    for (const p of preasignados || []) {
+      await put('votantesConcejal', p);
+    }
+    if (registroActual) {
+      await put('registros', registroActual);
+    }
+  },
+
   async marcarRegistradoLocalmente(registro) {
     await put('registros', registro);
   },

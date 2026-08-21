@@ -65,10 +65,19 @@ async function renderMesa(root, perfil) {
       ? await window.DBLocal.buscarVotantePorOrden(valor)
       : await window.DBLocal.buscarVotante(valor.replace(/\D/g, ''));
 
-    // Si hay señal, se refresca el estado contra el servidor: otro dispositivo
-    // (comando u otra mesa) puede haber registrado a esta persona despues de
-    // que este dispositivo descargo su paquete local.
-    if (votante && navigator.onLine) {
+    if (!votante && modoBusquedaMesa === 'cedula' && navigator.onLine) {
+      // No esta en el paquete local: puede ser que se haya agregado al padron
+      // DESPUES de que este dispositivo inicio sesion. Se busca en el servidor
+      // antes de decir que no existe.
+      const { ok, datos } = await window.Api.buscarVotante(valor.replace(/\D/g, ''));
+      if (ok && datos.local === perfil.local && datos.mesa === perfil.mesa) {
+        await window.DBLocal.guardarVotanteDescubierto(datos);
+        votante = await window.DBLocal.buscarVotante(datos.cedula);
+      }
+    } else if (votante && navigator.onLine) {
+      // Si hay señal, se refresca el estado contra el servidor: otro dispositivo
+      // (comando u otra mesa) puede haber registrado a esta persona despues de
+      // que este dispositivo descargo su paquete local.
       const { ok, datos } = await window.Api.buscarVotante(votante.cedula);
       if (ok && datos.registroActual) {
         votante = { ...votante, registroActual: datos.registroActual };
