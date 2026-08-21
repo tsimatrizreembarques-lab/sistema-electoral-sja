@@ -78,21 +78,98 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
   }
   const padron = padronSnap.data();
 
+  // Preasignados: hacen falta ANTES de tocar el registro, tanto para el chequeo
+  // de pertenencia del concejal como para completar lista/concejal asignados.
+  const preasignadosSnap = await db
+    .collection('votantesConcejal')
+    .where('cedula', '==', cedulaNorm)
+    .get();
+  const preasignados = preasignadosSnap.docs.map((d) => d.data());
+
+  let listaFinal = listaAsignada ?? preasignados[0]?.lista ?? null;
+  let concejalFinal = concejalAsignado ?? preasignados[0]?.nombreConcejal ?? null;
+  let forzarFinal = Boolean(forzar);
+
+  if (usuario.rol === 'concejal') {
+    // El concejal solo puede confirmar votantes de su propia lista (nunca a
+    // nombre de otro, y nunca sobreescribir un registro ya hecho por comando
+    // o mesa) — se corta aca, ANTES de tocar el registro, para que un concejal
+    // no pueda usar esta ruta para averiguar el estado de cedulas ajenas.
+    const propio = preasignados.find((p) => p.nombreConcejal === usuario.nombreConcejal);
+    if (!propio) {
+      return { ok: false, codigo: 403, mensaje: 'Esa cedula no esta en tu lista.' };
+    }
+    listaFinal = propio.lista ?? null;
+    concejalFinal = usuario.nombreConcejal;
+    forzarFinal = false;
+  }
+
   const registroRef = db.collection('registros').doc(cedulaNorm);
-  const registroSnap = await registroRef.get();
-  const yaEstabaRegistrado = registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO';
 
-  if (yaEstabaRegistrado && !forzar) {
-    const existente = registroSnap.data();
-    const fechaIntento = new Date().toISOString();
+  // Leer+decidir+escribir en una transaccion: evita que dos dispositivos que
+  // registran la MISMA cedula casi al mismo tiempo se pisen sin que ninguno
+  // detecte el conflicto (ambos verian "no registrado" si se leyera afuera).
+  const resultado = await db.runTransaction(async (tx) => {
+    const registroSnap = await tx.get(registroRef);
+    const yaEstabaRegistrado = registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO';
 
-    const eventoIntento = {
-      tipo: 'INTENTO_BLOQUEADO',
-      origenIntento: describirOrigen(usuario),
-      fechaHora: fechaIntento,
+    if (yaEstabaRegistrado && !forzarFinal) {
+      return { bloqueado: true, existente: registroSnap.data() };
+    }
+
+    const origenRegistro =
+      usuario.rol === 'comando'
+        ? `Registrado en Puesto Comando (${usuario.local})`
+        : usuario.rol === 'concejal'
+        ? `Confirmado por el concejal ${usuario.nombreConcejal} (reporte manual)`
+        : `Registrado como Veedor Mesa ${usuario.mesa} — ${usuario.local}`;
+
+    const tipo = yaEstabaRegistrado ? 'FORZADO' : 'REGISTRO';
+    const fechaHora = fechaHoraCliente || new Date().toISOString();
+
+    const registro = {
+      cedula: cedulaNorm,
+      orden: padron.orden ?? null,
+      nombresApellidos: padron.nombresApellidos,
+      local: padron.local,
+      mesa: padron.mesa,
+      listaPreasignada: preasignados[0]?.lista ?? null,
+      concejalPreasignado: preasignados.map((p) => p.nombreConcejal).join(' / ') || null,
+      listaAsignada: listaFinal,
+      concejalAsignado: concejalFinal,
+      estadoGestion: 'REGISTRADO',
+      origenRegistro,
+      tipo,
+      fechaHora,
+      fechaHoraServidor: admin.firestore.FieldValue.serverTimestamp(),
       dispositivoId: dispositivoId || null,
     };
-    await registroRef.update({ historial: admin.firestore.FieldValue.arrayUnion(eventoIntento) });
+
+    tx.set(
+      registroRef,
+      {
+        ...registro,
+        historial: admin.firestore.FieldValue.arrayUnion({ tipo, origenRegistro, fechaHora, dispositivoId: dispositivoId || null }),
+      },
+      { merge: true }
+    );
+
+    return { bloqueado: false, registro };
+  });
+
+  if (resultado.bloqueado) {
+    const existente = resultado.existente;
+    const fechaIntento = new Date().toISOString();
+    const origenIntento = describirOrigen(usuario);
+
+    await registroRef.update({
+      historial: admin.firestore.FieldValue.arrayUnion({
+        tipo: 'INTENTO_BLOQUEADO',
+        origenIntento,
+        fechaHora: fechaIntento,
+        dispositivoId: dispositivoId || null,
+      }),
+    });
 
     // Traza en Sheets del intento bloqueado: nunca bloquea ni hace fallar la respuesta.
     backupRegistro({
@@ -103,7 +180,7 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
       listaAsignada: existente.listaAsignada,
       concejalAsignado: existente.concejalAsignado,
       estadoGestion: 'INTENTO_BLOQUEADO',
-      origenRegistro: `Intento desde ${eventoIntento.origenIntento} — ya estaba registrado por ${existente.origenRegistro}`,
+      origenRegistro: `Intento desde ${origenIntento} — ya estaba registrado por ${existente.origenRegistro}`,
       fechaHora: fechaIntento,
       dispositivoId,
       tipo: 'INTENTO_BLOQUEADO',
@@ -117,69 +194,10 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     };
   }
 
-  // Preasignados, para dejar historial de con que concejal(es) habia llegado cargado.
-  const preasignadosSnap = await db
-    .collection('votantesConcejal')
-    .where('cedula', '==', cedulaNorm)
-    .get();
-  const preasignados = preasignadosSnap.docs.map((d) => d.data());
-
-  let listaFinal = listaAsignada ?? preasignados[0]?.lista ?? null;
-  let concejalFinal = concejalAsignado ?? preasignados[0]?.nombreConcejal ?? null;
-
-  if (usuario.rol === 'concejal') {
-    // El concejal solo puede confirmar votantes de su propia lista, y siempre
-    // queda asignado a si mismo (no puede reportar a nombre de otro concejal).
-    const propio = preasignados.find((p) => p.nombreConcejal === usuario.nombreConcejal);
-    if (!propio) {
-      return { ok: false, codigo: 403, mensaje: 'Esa cedula no esta en tu lista.' };
-    }
-    listaFinal = propio.lista ?? null;
-    concejalFinal = usuario.nombreConcejal;
-  }
-
-  const origenRegistro =
-    usuario.rol === 'comando'
-      ? `Registrado en Puesto Comando (${usuario.local})`
-      : usuario.rol === 'concejal'
-      ? `Confirmado por el concejal ${usuario.nombreConcejal} (reporte manual)`
-      : `Registrado como Veedor Mesa ${usuario.mesa} — ${usuario.local}`;
-
-  const tipo = yaEstabaRegistrado ? 'FORZADO' : 'REGISTRO';
-  const fechaHora = fechaHoraCliente || new Date().toISOString();
-
-  const registro = {
-    cedula: cedulaNorm,
-    orden: padron.orden ?? null,
-    nombresApellidos: padron.nombresApellidos,
-    local: padron.local,
-    mesa: padron.mesa,
-    listaPreasignada: preasignados[0]?.lista ?? null,
-    concejalPreasignado: preasignados.map((p) => p.nombreConcejal).join(' / ') || null,
-    listaAsignada: listaFinal,
-    concejalAsignado: concejalFinal,
-    estadoGestion: 'REGISTRADO',
-    origenRegistro,
-    tipo,
-    fechaHora,
-    fechaHoraServidor: admin.firestore.FieldValue.serverTimestamp(),
-    dispositivoId: dispositivoId || null,
-  };
-
-  await registroRef.set(registro, { merge: true });
-  await registroRef.update({
-    historial: admin.firestore.FieldValue.arrayUnion({
-      tipo,
-      origenRegistro,
-      fechaHora,
-      dispositivoId: dispositivoId || null,
-    }),
-  });
-
   // Respaldo en Google Sheets: nunca bloquea ni hace fallar el registro principal.
-  backupRegistro(registro).catch(() => {});
+  backupRegistro(resultado.registro).catch(() => {});
 
-  return { ok: true, registro };
+  return { ok: true, registro: resultado.registro };
 }
 
 /**

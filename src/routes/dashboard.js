@@ -122,22 +122,34 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
     }));
 
     // Preasignados a este concejal que todavia no tienen ningun registro.
+    // El padron de cada uno se trae en lotes (no uno por uno), para no hacer
+    // N consultas secuenciales a Firestore en un dashboard que se refresca cada 15s.
+    const cedulasPendientes = preasignadosSnap.docs
+      .map((d) => d.data().cedula)
+      .filter((c) => !cedulasRegistradas.has(c));
+
+    const padronPorCedula = {};
+    for (let i = 0; i < cedulasPendientes.length; i += LOTE) {
+      const lote = cedulasPendientes.slice(i, i + LOTE);
+      if (lote.length === 0) continue;
+      const snap = await db.collection('padron').where('cedula', 'in', lote).get();
+      snap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+    }
+
     const pendientes = [];
     for (const doc of preasignadosSnap.docs) {
       const v = doc.data();
-      if (!cedulasRegistradas.has(v.cedula)) {
-        const padronSnap = await db.collection('padron').doc(v.cedula).get();
-        const padron = padronSnap.exists ? padronSnap.data() : {};
-        pendientes.push({
-          cedula: v.cedula,
-          nombresApellidos: padron.nombresApellidos || '(no encontrado en padron)',
-          local: padron.local || null,
-          mesa: padron.mesa || null,
-      caudillo: v.caudillo || null,
-          estadoGestion: 'PENDIENTE',
-          duplicado: esDuplicado(v.cedula),
-        });
-      }
+      if (cedulasRegistradas.has(v.cedula)) continue;
+      const padron = padronPorCedula[v.cedula] || {};
+      pendientes.push({
+        cedula: v.cedula,
+        nombresApellidos: padron.nombresApellidos || '(no encontrado en padron)',
+        local: padron.local || null,
+        mesa: padron.mesa || null,
+        caudillo: v.caudillo || null,
+        estadoGestion: 'PENDIENTE',
+        duplicado: esDuplicado(v.cedula),
+      });
     }
 
     const todosLosVotantes = [...registradosConCaudillo, ...pendientes];

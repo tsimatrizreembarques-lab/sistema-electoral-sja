@@ -3,6 +3,14 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 
+if (!process.env.JWT_SECRET) {
+  console.warn(
+    '⚠ ADVERTENCIA: JWT_SECRET no esta configurado. Se esta usando un secreto ' +
+    'por defecto inseguro — cualquiera podria forjar tokens validos. Configura ' +
+    'la variable de entorno JWT_SECRET antes de usar en produccion.'
+  );
+}
+
 const authRoutes = require('./src/routes/auth');
 const votantesRoutes = require('./src/routes/votantes');
 const dashboardRoutes = require('./src/routes/dashboard');

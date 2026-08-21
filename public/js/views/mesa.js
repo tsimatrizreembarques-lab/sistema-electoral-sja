@@ -61,9 +61,20 @@ async function renderMesa(root, perfil) {
     const valor = document.getElementById('valor-busqueda').value.trim();
     if (!valor) return;
 
-    const votante = modoBusquedaMesa === 'orden'
+    let votante = modoBusquedaMesa === 'orden'
       ? await window.DBLocal.buscarVotantePorOrden(valor)
       : await window.DBLocal.buscarVotante(valor.replace(/\D/g, ''));
+
+    // Si hay señal, se refresca el estado contra el servidor: otro dispositivo
+    // (comando u otra mesa) puede haber registrado a esta persona despues de
+    // que este dispositivo descargo su paquete local.
+    if (votante && navigator.onLine) {
+      const { ok, datos } = await window.Api.buscarVotante(votante.cedula);
+      if (ok && datos.registroActual) {
+        votante = { ...votante, registroActual: datos.registroActual };
+        await window.DBLocal.marcarRegistradoLocalmente(datos.registroActual);
+      }
+    }
 
     renderResultadoMesa(votante, valor, perfil);
   });
@@ -78,7 +89,7 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
   }
 
   if (votante.mesa !== perfil.mesa || votante.local !== perfil.local) {
-    cont.innerHTML = `<div class="tarjeta alerta">Esta persona corresponde a otra mesa: Mesa ${votante.mesa}  ${votante.local}.</div>`;
+    cont.innerHTML = `<div class="tarjeta alerta">Esta persona corresponde a otra mesa: Mesa ${votante.mesa} — ${votante.local}.</div>`;
     return;
   }
 
@@ -127,7 +138,7 @@ async function confirmarRegistroMesa(votante, perfil) {
     listaAsignada,
     concejalAsignado,
     perfil,
-    origenLocal: `Registrado como Veedor Mesa ${perfil.mesa}  ${perfil.local}`,
+    origenLocal: `Registrado como Veedor Mesa ${perfil.mesa} — ${perfil.local}`,
   });
 
   document.getElementById('resultado').innerHTML = `<div class="tarjeta ok">Registrado correctamente.</div>`;

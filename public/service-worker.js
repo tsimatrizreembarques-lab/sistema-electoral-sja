@@ -1,4 +1,4 @@
-const CACHE_NAME = 'electoral-sja-v8';
+const CACHE_NAME = 'electoral-sja-v9';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -7,6 +7,7 @@ const APP_SHELL = [
   '/js/db-local.js',
   '/js/api.js',
   '/js/sync.js',
+  '/js/notificaciones.js',
   '/js/views/login.js',
   '/js/views/comando.js',
   '/js/views/mesa.js',
