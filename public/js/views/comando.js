@@ -113,6 +113,7 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
     cont.innerHTML = `
       <div class="tarjeta ok">
         <h3>${votante.nombresApellidos}</h3>
+        <p>Orden: ${votante.orden ?? '-'}</p>
         <p>Ya fue registrado: <strong>${votante.registroActual.origenRegistro}</strong></p>
         <p>Hora: ${window.formatearFechaPY(votante.registroActual.fechaHora)}</p>
         <p class="grande">Mesa ${votante.mesa} — ${votante.local}</p>
@@ -152,6 +153,7 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
     cont.innerHTML = `
       <div class="tarjeta">
         <h3>${votante.nombresApellidos}</h3>
+        <p>Orden: ${votante.orden ?? '-'}</p>
         <p class="grande">Mesa ${votante.mesa} — ${votante.local}</p>
         ${opcionesConcejal}
         <p class="sub">Modo consulta: no se registra ningun paso.</p>
@@ -163,6 +165,7 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
   cont.innerHTML = `
     <div class="tarjeta">
       <h3>${votante.nombresApellidos}</h3>
+      <p>Orden: ${votante.orden ?? '-'}</p>
       <p class="grande">Dirigir a: Mesa ${votante.mesa} — ${votante.local}</p>
       ${opcionesConcejal}
       <button id="btn-registrar" class="primario">Registrar paso por comando</button>
