@@ -89,6 +89,7 @@ function generarPDFListasConcejales(datos) {
       (v, i) => `
     <tr class="${v.duplicado ? 'duplicado' : ''}">
       <td>${i + 1}</td>
+      <td>${v.opcionConcejal ?? '-'}</td>
       <td>${v.nombreConcejal || ''}</td>
       <td>${v.lista ?? '-'}</td>
       <td>${v.cedula}</td>
@@ -135,7 +136,7 @@ function generarPDFListasConcejales(datos) {
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Concejal</th><th>Lista</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th><th>Duplicado</th>
+            <th>#</th><th>Opción</th><th>Concejal</th><th>Lista</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th><th>Duplicado</th>
           </tr>
         </thead>
         <tbody>${filas}</tbody>

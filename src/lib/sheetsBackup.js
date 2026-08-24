@@ -25,7 +25,7 @@ function getSheetsClient() {
 
 const SHEET_NAME = 'REGISTROS';
 const SHEET_LISTAS = 'LISTAS_CONCEJALES';
-const ENCABEZADOS_LISTAS = ['Concejal', 'Lista', 'Cedula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Estado'];
+const ENCABEZADOS_LISTAS = ['Opcion', 'Concejal', 'Lista', 'Cedula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Estado'];
 
 /** Formatea una fecha (ISO UTC o Date) a hora local de Paraguay, legible. */
 function formatearFechaPY(valor) {
@@ -151,10 +151,16 @@ async function sincronizarListasConcejales(db) {
 
     await asegurarHoja(sheets, sheetId, SHEET_LISTAS, ENCABEZADOS_LISTAS);
 
-    const [votantesConcejalSnap, registrosSnap] = await Promise.all([
+    const [votantesConcejalSnap, registrosSnap, concejalesSnap] = await Promise.all([
       db.collection('votantesConcejal').get(),
       db.collection('registros').select('cedula', 'estadoGestion').get(),
+      db.collection('concejales').select('opcion').get(),
     ]);
+
+    const opcionPorConcejal = {};
+    concejalesSnap.forEach((doc) => {
+      opcionPorConcejal[doc.id] = doc.data().opcion;
+    });
 
     const estadoPorCedula = {};
     registrosSnap.forEach((doc) => {
@@ -176,10 +182,15 @@ async function sincronizarListasConcejales(db) {
     }
 
     const filas = votantes
-      .sort((a, b) => (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '') || String(a.cedula).localeCompare(String(b.cedula)))
+      .sort((a, b) => {
+        const opcionA = opcionPorConcejal[a.nombreConcejal] ?? 999;
+        const opcionB = opcionPorConcejal[b.nombreConcejal] ?? 999;
+        return opcionA - opcionB || (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '') || String(a.cedula).localeCompare(String(b.cedula));
+      })
       .map((v) => {
         const padron = padronPorCedula[v.cedula] || {};
         return [
+          opcionPorConcejal[v.nombreConcejal] ?? '',
           v.nombreConcejal || '',
           v.lista ?? '',
           v.cedula || '',

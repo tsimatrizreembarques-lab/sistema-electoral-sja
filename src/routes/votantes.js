@@ -311,8 +311,12 @@ router.get('/paquete-local/descargar', requiereRol('comando', 'mesa'), async (re
     if (rol === 'mesa') {
       padronQuery = padronQuery.where('mesa', '==', mesa);
     }
-    const padronSnap = await padronQuery.get();
+    const [padronSnap, concejalesSnap] = await Promise.all([
+      padronQuery.get(),
+      db.collection('concejales').get(),
+    ]);
     const padron = padronSnap.docs.map((d) => d.data());
+    const concejales = concejalesSnap.docs.map((d) => d.data());
     const cedulas = padron.map((p) => p.cedula);
 
     // Firestore 'in' admite hasta 30 valores por consulta; se hace en lotes.
@@ -338,6 +342,7 @@ router.get('/paquete-local/descargar', requiereRol('comando', 'mesa'), async (re
       padron,
       votantesConcejal,
       registros,
+      concejales,
     });
   } catch (error) {
     console.error('Error al generar paquete local:', error);

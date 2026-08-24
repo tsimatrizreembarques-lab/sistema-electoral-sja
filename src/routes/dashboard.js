@@ -57,10 +57,16 @@ router.get('/admin/listas', requiereRol('admin'), async (req, res) => {
   try {
     const db = getFirestore();
 
-    const [votantesConcejalSnap, registrosSnap] = await Promise.all([
+    const [votantesConcejalSnap, registrosSnap, concejalesSnap] = await Promise.all([
       db.collection('votantesConcejal').get(),
       db.collection('registros').select('cedula', 'estadoGestion', 'origenRegistro').get(),
+      db.collection('concejales').select('opcion').get(),
     ]);
+
+    const opcionPorConcejal = {};
+    concejalesSnap.forEach((doc) => {
+      opcionPorConcejal[doc.id] = doc.data().opcion;
+    });
 
     const registroPorCedula = {};
     registrosSnap.forEach((doc) => {
@@ -87,12 +93,17 @@ router.get('/admin/listas', requiereRol('admin'), async (req, res) => {
     }
 
     const lista = votantes
-      .sort((a, b) => (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '') || String(a.cedula).localeCompare(String(b.cedula)))
+      .sort((a, b) => {
+        const opcionA = opcionPorConcejal[a.nombreConcejal] ?? 999;
+        const opcionB = opcionPorConcejal[b.nombreConcejal] ?? 999;
+        return opcionA - opcionB || (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '') || String(a.cedula).localeCompare(String(b.cedula));
+      })
       .map((v) => {
         const padron = padronPorCedula[v.cedula] || {};
         const registro = registroPorCedula[v.cedula];
         const registrado = registro?.estadoGestion === 'REGISTRADO';
         return {
+          opcionConcejal: opcionPorConcejal[v.nombreConcejal] ?? null,
           nombreConcejal: v.nombreConcejal,
           lista: v.lista ?? null,
           cedula: v.cedula,

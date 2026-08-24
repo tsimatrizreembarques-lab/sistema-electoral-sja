@@ -52,11 +52,13 @@ async function renderComando(root, perfil) {
 
     const cedulaLimpia = cedula.replace(/\D/g, '');
 
+    const concejales = await window.DBLocal.obtenerConcejales();
+
     if (modoComando === 'consultar') {
       // Consultar: busca en TODO el padron (todos los locales), no solo el propio.
       // Requiere conexion, ya que el dispositivo solo tiene descargado su local.
       const { ok, datos } = await window.Api.buscarVotante(cedulaLimpia);
-      renderResultadoComando(ok ? datos : null, cedula, perfil, modoComando);
+      renderResultadoComando(ok ? datos : null, cedula, perfil, modoComando, concejales);
       return;
     }
 
@@ -85,7 +87,7 @@ async function renderComando(root, perfil) {
       }
     }
 
-    renderResultadoComando(votante, cedula, perfil, modoComando);
+    renderResultadoComando(votante, cedula, perfil, modoComando, concejales);
   });
 }
 
@@ -98,7 +100,7 @@ function actualizarModoComando(nuevoModo) {
   if (inputCedula) { inputCedula.value = ''; inputCedula.focus(); }
 }
 
-function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
+function renderResultadoComando(votante, cedulaBuscada, perfil, modo, concejales) {
   const cont = document.getElementById('resultado');
 
   if (!votante) {
@@ -116,6 +118,7 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
         <p>Orden: ${votante.orden ?? '-'}</p>
         <p>Ya fue registrado: <strong>${votante.registroActual.origenRegistro}</strong></p>
         <p>Hora: ${window.formatearFechaPY(votante.registroActual.fechaHora)}</p>
+        <p>Concejal asignado: <strong>${votante.registroActual.concejalAsignado || 'Sin concejal asignado'}</strong>${votante.registroActual.listaAsignada ? ` (Lista ${votante.registroActual.listaAsignada})` : ''}</p>
         <p class="grande">Mesa ${votante.mesa} — ${votante.local}</p>
         ${historial ? `<p class="sub" style="white-space:pre-line;">Historial:\n${historial}</p>` : ''}
       </div>
@@ -127,26 +130,17 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
     return;
   }
 
-  let opcionesConcejal = '';
+  // Mensaje informativo de concejalia preasignada (se usa en Consultar, y
+  // como aviso arriba del selector en Registrar).
+  let infoConcejal = '';
   if (votante.duplicadoAmbiguo) {
-    opcionesConcejal = `
-      <p class="advertencia">Esta cédula figura en más de una lista de concejal. Preguntale al votante a quién apoya y confirmá:</p>
-      <div class="opciones-concejal">
-        ${votante.preasignados
-          .map(
-            (p, i) => `
-          <label class="opcion">
-            <input type="radio" name="concejal" value="${i}" ${i === 0 ? 'checked' : ''} />
-            ${p.nombreConcejal} (Lista ${p.lista})
-          </label>`
-          )
-          .join('')}
-      </div>
-    `;
+    infoConcejal = `<p class="advertencia">Esta cédula figura en más de una lista de concejal: ${votante.preasignados
+      .map((p) => `${p.nombreConcejal} (Lista ${p.lista})`)
+      .join(', ')}. Preguntale al votante a quién apoya.</p>`;
   } else if (votante.preasignados.length === 1) {
-    opcionesConcejal = `<p>Concejalía: <strong>${votante.preasignados[0].nombreConcejal} (Lista ${votante.preasignados[0].lista})</strong></p>`;
+    infoConcejal = `<p>Concejalía preasignada: <strong>${votante.preasignados[0].nombreConcejal} (Lista ${votante.preasignados[0].lista})</strong></p>`;
   } else {
-    opcionesConcejal = `<p class="sub">Sin concejalía preasignada.</p>`;
+    infoConcejal = `<p class="sub">Sin concejalía preasignada.</p>`;
   }
 
   if (modo === 'consultar') {
@@ -155,33 +149,47 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
         <h3>${votante.nombresApellidos}</h3>
         <p>Orden: ${votante.orden ?? '-'}</p>
         <p class="grande">Mesa ${votante.mesa} — ${votante.local}</p>
-        ${opcionesConcejal}
+        ${infoConcejal}
         <p class="sub">Modo consulta: no se registra ningun paso.</p>
       </div>
     `;
     return;
   }
 
+  // Registrar: siempre se puede elegir (o corregir) el concejal asignado,
+  // tenga o no una preasignacion — asi nunca queda un voto sin poder
+  // asignarse a nadie, ni sin forma de corregirlo despues.
+  const concejalPreseleccionado = votante.duplicadoAmbiguo ? '' : votante.preasignados[0]?.nombreConcejal || '';
+  const opcionesSelect = (concejales || [])
+    .slice()
+    .sort((a, b) => (a.opcion ?? 999) - (b.opcion ?? 999) || (a.nombreConcejal || '').localeCompare(b.nombreConcejal || ''))
+    .map(
+      (c) =>
+        `<option value="${c.nombreConcejal}" data-lista="${c.lista ?? ''}" ${
+          c.nombreConcejal === concejalPreseleccionado ? 'selected' : ''
+        }>${c.opcion ? `Opción ${c.opcion} — ` : ''}${c.nombreConcejal} (Lista ${c.lista ?? '-'})</option>`
+    )
+    .join('');
+
   cont.innerHTML = `
     <div class="tarjeta">
       <h3>${votante.nombresApellidos}</h3>
       <p>Orden: ${votante.orden ?? '-'}</p>
       <p class="grande">Dirigir a: Mesa ${votante.mesa} — ${votante.local}</p>
-      ${opcionesConcejal}
+      ${infoConcejal}
+      <label class="sub" style="display:block; margin: 8px 0 4px;">Concejal asignado</label>
+      <select id="select-concejal" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--gris-claro); margin-bottom:12px;">
+        <option value="">Sin concejal</option>
+        ${opcionesSelect}
+      </select>
       <button id="btn-registrar" class="primario">Registrar paso por comando</button>
     </div>
   `;
 
   document.getElementById('btn-registrar').addEventListener('click', async () => {
-    let listaAsignada = votante.preasignados[0]?.lista ?? null;
-    let concejalAsignado = votante.preasignados[0]?.nombreConcejal ?? null;
-
-    if (votante.duplicadoAmbiguo) {
-      const seleccion = document.querySelector('input[name="concejal"]:checked');
-      const idx = Number(seleccion?.value ?? 0);
-      listaAsignada = votante.preasignados[idx].lista;
-      concejalAsignado = votante.preasignados[idx].nombreConcejal;
-    }
+    const select = document.getElementById('select-concejal');
+    const concejalAsignado = select.value || null;
+    const listaAsignada = concejalAsignado ? select.options[select.selectedIndex].dataset.lista || null : null;
 
     await registrarDesdeDispositivo({
       votante,
@@ -191,7 +199,12 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo) {
       origenLocal: `Registrado en Puesto Comando (${perfil.local})`,
     });
 
-    document.getElementById('resultado').innerHTML = `<div class="tarjeta ok">Registrado. Dirigido a Mesa ${votante.mesa}.</div>`;
+    document.getElementById('resultado').innerHTML = `
+      <div class="tarjeta ok">
+        Registrado. Dirigido a Mesa ${votante.mesa}.
+        <p>Concejal asignado: <strong>${concejalAsignado || 'Sin concejal asignado'}</strong>${listaAsignada ? ` (Lista ${listaAsignada})` : ''}</p>
+      </div>
+    `;
     document.getElementById('cedula').value = '';
     document.getElementById('cedula').focus();
   });

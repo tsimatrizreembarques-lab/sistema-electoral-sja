@@ -4,7 +4,7 @@
 // de sincronizar cuando recupera seal.
 
 const DB_NAME = 'electoral-sja-local';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /** Mayusculas, sin acentos, sin espacios de mas — para comparar nombres. */
 function normalizarTexto(texto) {
@@ -46,6 +46,9 @@ function abrirDB() {
       }
       if (!db.objectStoreNames.contains('sesion')) {
         db.createObjectStore('sesion', { keyPath: 'clave' });
+      }
+      if (!db.objectStoreNames.contains('concejales')) {
+        db.createObjectStore('concejales', { keyPath: 'nombreConcejal' });
       }
     };
 
@@ -128,10 +131,15 @@ async function eliminar(storeName, clave) {
 // --- API de alto nivel usada por las vistas ---
 
 const DBLocal = {
-  async guardarPaqueteInicial({ padron, votantesConcejal, registros }) {
+  async guardarPaqueteInicial({ padron, votantesConcejal, registros, concejales }) {
     await limpiarYCargar('padron', padron);
     await limpiarYCargar('votantesConcejal', votantesConcejal);
     await limpiarYCargar('registros', registros);
+    await limpiarYCargar('concejales', concejales || []);
+  },
+
+  async obtenerConcejales() {
+    return getTodos('concejales');
   },
 
   async buscarVotante(cedula) {
