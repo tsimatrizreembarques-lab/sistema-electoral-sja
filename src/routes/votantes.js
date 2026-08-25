@@ -8,6 +8,26 @@ const { statsRef } = require('../lib/stats');
 const router = express.Router();
 
 /**
+ * GET /api/votantes/concejales
+ * Lista completa de concejales (nombre, lista, opcion en la boleta). Usado
+ * por Comando para poder asignar cualquier concejal al registrar, tenga o
+ * no una preasignacion. Se pide cada vez que se abre la pantalla, ademas de
+ * quedar guardada en el paquete offline al iniciar sesion — asi los
+ * dispositivos que ya estaban logueados tambien la reciben sin tener que
+ * volver a entrar.
+ */
+router.get('/concejales', requiereRol('comando', 'mesa'), async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snap = await db.collection('concejales').get();
+    res.json({ concejales: snap.docs.map((d) => d.data()) });
+  } catch (error) {
+    console.error('Error al listar concejales:', error);
+    res.status(500).json({ error: 'Error interno al listar concejales.' });
+  }
+});
+
+/**
  * GET /api/votantes/:cedula
  * Usado por Comando y Mesa para buscar a un votante.
  * Devuelve: datos del padron, preasignaciones (puede haber mas de una = duplicado real),

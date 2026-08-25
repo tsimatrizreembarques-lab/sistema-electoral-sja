@@ -24,6 +24,10 @@ const Api = {
     return this._fetch(`/api/votantes/${encodeURIComponent(cedula)}`);
   },
 
+  listarConcejales() {
+    return this._fetch('/api/votantes/concejales');
+  },
+
   registrarVotante(payload) {
     return this._fetch('/api/votantes/registrar', {
       method: 'POST',

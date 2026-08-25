@@ -142,6 +142,10 @@ const DBLocal = {
     return getTodos('concejales');
   },
 
+  async guardarConcejales(concejales) {
+    await limpiarYCargar('concejales', concejales || []);
+  },
+
   async buscarVotante(cedula) {
     const padron = await getPorClave('padron', cedula);
     if (!padron) return null;

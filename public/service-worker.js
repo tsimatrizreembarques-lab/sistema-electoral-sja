@@ -1,4 +1,4 @@
-const CACHE_NAME = 'electoral-sja-v9';
+const CACHE_NAME = 'electoral-sja-v10';
 const APP_SHELL = [
   '/',
   '/index.html',

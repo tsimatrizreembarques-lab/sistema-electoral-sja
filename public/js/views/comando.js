@@ -36,6 +36,16 @@ async function renderComando(root, perfil) {
   document.getElementById('modo-registrar').addEventListener('click', () => actualizarModoComando('registrar'));
   document.getElementById('modo-consultar').addEventListener('click', () => actualizarModoComando('consultar'));
 
+  // Refresca la lista de concejales contra el servidor cada vez que se abre
+  // esta pantalla (si hay señal): asi los dispositivos que ya estaban
+  // logueados desde antes de que existiera esta funcion tambien la reciben,
+  // sin tener que cerrar sesion y volver a entrar.
+  if (navigator.onLine) {
+    window.Api.listarConcejales().then(({ ok, datos }) => {
+      if (ok) window.DBLocal.guardarConcejales(datos.concejales);
+    });
+  }
+
   window.Sync.iniciarSyncAutomatico(({ estado, pendientes }) => {
     const el = document.getElementById('estado-sync');
     if (!el) return;
