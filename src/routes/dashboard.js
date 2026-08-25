@@ -24,20 +24,32 @@ router.get('/admin', requiereRol('admin'), async (req, res) => {
     const padronPorMesa = stats.padronPorMesa || {};
     const registradosPorMesa = stats.porMesa || {};
 
-    const porMesa = {};
+    // Agrupado por escuela: cada mesa es "LOCAL - Mesa N" en stats, asi que
+    // se separa en (local, mesa) y se agrupan bajo su escuela — antes se
+    // mostraban todas las mesas de todas las escuelas mezcladas en una sola
+    // lista plana.
+    const porLocal = {};
     new Set([...Object.keys(padronPorMesa), ...Object.keys(registradosPorMesa)]).forEach((clave) => {
-      porMesa[clave] = {
-        registrados: registradosPorMesa[clave] || 0,
-        total: padronPorMesa[clave] || 0,
-      };
+      const idx = clave.lastIndexOf(' - Mesa ');
+      const local = idx === -1 ? clave : clave.slice(0, idx);
+      const mesa = idx === -1 ? null : clave.slice(idx + ' - Mesa '.length);
+      const registrados = registradosPorMesa[clave] || 0;
+      const total = padronPorMesa[clave] || 0;
+
+      if (!porLocal[local]) porLocal[local] = { registrados: 0, total: 0, mesas: [] };
+      porLocal[local].registrados += registrados;
+      porLocal[local].total += total;
+      porLocal[local].mesas.push({ mesa, registrados, total });
+    });
+    Object.values(porLocal).forEach((loc) => {
+      loc.mesas.sort((a, b) => Number(a.mesa) - Number(b.mesa));
     });
 
     res.json({
       totalPadron,
       totalRegistrados,
       totalPendientes: totalPadron - totalRegistrados,
-      porLocal: stats.porLocal || {},
-      porMesa,
+      porLocal,
       porConcejal: stats.porConcejal || {},
       duplicadosEntreListas: stats.duplicadosEntreListas || 0,
     });

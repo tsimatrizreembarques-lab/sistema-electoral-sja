@@ -9,10 +9,8 @@ async function renderAdmin(root, perfil) {
       <button type="button" id="btn-pdf-listas" class="secundario" style="width:100%; margin-bottom:16px;">
         📄 Generar PDF de listas de concejales
       </button>
-      <h3>Por local</h3>
-      <div id="por-local"></div>
-      <h3>Por mesa</h3>
-      <div id="por-mesa"></div>
+      <h3>Por escuela</h3>
+      <div id="por-escuela"></div>
       <h3>Por concejal</h3>
       <div id="por-concejal"></div>
     </main>
@@ -45,12 +43,23 @@ async function renderAdmin(root, perfil) {
       .join('')}</div>`;
   }
 
-  function tablaPorMesa(objeto) {
-    const entradas = Object.entries(objeto).sort((a, b) => b[1].total - a[1].total);
+  // Una tarjeta por escuela, con su total arriba y sus mesas (en orden numerico) debajo.
+  function tablaPorEscuela(porLocal) {
+    const entradas = Object.entries(porLocal).sort((a, b) => a[0].localeCompare(b[0]));
     if (entradas.length === 0) return '<p class="sub">Sin datos aún.</p>';
-    return `<div class="tabla-simple">${entradas
-      .map(([k, c]) => `<div class="fila"><span>${k}</span><strong>${c.registrados}/${c.total}</strong></div>`)
-      .join('')}</div>`;
+    return entradas
+      .map(
+        ([local, datos]) => `
+      <div class="tarjeta">
+        <h4 style="margin:0 0 8px;">${local} <span class="sub">— ${datos.registrados}/${datos.total}</span></h4>
+        <div class="tabla-simple">
+          ${datos.mesas
+            .map((m) => `<div class="fila"><span>Mesa ${m.mesa ?? '-'}</span><strong>${m.registrados}/${m.total}</strong></div>`)
+            .join('')}
+        </div>
+      </div>`
+      )
+      .join('');
   }
 
   async function cargar() {
@@ -66,8 +75,7 @@ async function renderAdmin(root, perfil) {
       </div>
     `;
 
-    document.getElementById('por-local').innerHTML = tabla(datos.porLocal);
-    document.getElementById('por-mesa').innerHTML = tablaPorMesa(datos.porMesa);
+    document.getElementById('por-escuela').innerHTML = tablaPorEscuela(datos.porLocal);
     document.getElementById('por-concejal').innerHTML = tabla(datos.porConcejal);
   }
 
