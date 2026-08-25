@@ -254,7 +254,12 @@ window.formatearFechaPY = function (iso) {
 // (registro.historial: cada intento de comando, mesa o concejal, exitoso o no).
 window.formatearHistorial = function (historial) {
   if (!Array.isArray(historial) || historial.length === 0) return '';
-  const etiquetas = { REGISTRO: 'Registrado', FORZADO: 'Registrado (forzado)', INTENTO_BLOQUEADO: 'Intento bloqueado' };
+  const etiquetas = {
+    REGISTRO: 'Registrado',
+    FORZADO: 'Registrado (forzado)',
+    CONFIRMACION_MESA: 'Confirmado en Mesa (paso final)',
+    INTENTO_BLOQUEADO: 'Intento bloqueado',
+  };
   return historial
     .slice()
     .sort((a, b) => new Date(a.fechaHora) - new Date(b.fechaHora))

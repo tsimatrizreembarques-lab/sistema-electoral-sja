@@ -83,11 +83,14 @@ function describirOrigen(usuario) {
 }
 
 /**
- * Registra (o actualiza, si forzar=true) el paso de un votante por comando,
- * mesa o concejal. Un unico estado por votante: PENDIENTE -> REGISTRADO, sin
- * importar cual de los tres lo marque. Si ya estaba REGISTRADO y no se fuerza,
- * devuelve conflicto — pero igual queda una traza del intento (historial +
- * Sheets), para que se sepa que alguien mas tambien intento marcarlo.
+ * Registra (o actualiza) el paso de un votante por comando, mesa o concejal.
+ *
+ * Es una trazabilidad con orden real: comando (o directamente el concejal)
+ * registra PRIMERO cuando el votante se mobiliza, y Mesa confirma AL FINAL
+ * que efectivamente voto — por eso Mesa nunca se bloquea, aunque ya este
+ * REGISTRADO por otro puesto: eso es el flujo normal, no un conflicto.
+ * Comando y concejal si se bloquean entre si (evitan duplicar el conteo),
+ * pero igual queda una traza del intento (historial + Sheets).
  */
 async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsignado, dispositivoId, forzar, fechaHoraCliente }) {
   const db = getFirestore();
@@ -123,6 +126,10 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     listaFinal = propio.lista ?? null;
     concejalFinal = usuario.nombreConcejal;
     forzarFinal = false;
+  } else if (usuario.rol === 'mesa') {
+    // Mesa es el ultimo paso: siempre puede confirmar, aunque comando o el
+    // concejal ya lo hayan registrado antes. Nunca se bloquea.
+    forzarFinal = true;
   }
 
   const registroRef = db.collection('registros').doc(cedulaNorm);
@@ -145,7 +152,11 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
         ? `Confirmado por el concejal ${usuario.nombreConcejal} (reporte manual)`
         : `Registrado como Veedor Mesa ${usuario.mesa} — ${usuario.local}`;
 
-    const tipo = yaEstabaRegistrado ? 'FORZADO' : 'REGISTRO';
+    const tipo = !yaEstabaRegistrado
+      ? 'REGISTRO'
+      : usuario.rol === 'mesa'
+      ? 'CONFIRMACION_MESA'
+      : 'FORZADO';
     const fechaHora = fechaHoraCliente || new Date().toISOString();
 
     const registro = {
