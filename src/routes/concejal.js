@@ -10,8 +10,9 @@ const router = express.Router();
 /**
  * GET /api/concejal/buscar/:cedula
  * El concejal escribe una cedula para agregarla a su lista. Devuelve el
- * nombre (tomado del padron) y avisos: si ya esta en su propia lista, o
- * si ya esta en la lista de OTRO concejal (informativo, no bloqueante).
+ * nombre (tomado del padron) y si ya esta en su propia lista o ya fue
+ * registrada. NUNCA informa si la cedula esta tambien en la lista de OTRO
+ * concejal — esa visibilidad es exclusiva del admin (reporte de duplicados).
  */
 router.get('/buscar/:cedula', requiereRol('concejal'), async (req, res) => {
   try {
@@ -27,13 +28,8 @@ router.get('/buscar/:cedula', requiereRol('concejal'), async (req, res) => {
     }
     const padron = padronSnap.data();
 
-    const todasSnap = await db.collection('votantesConcejal').where('cedula', '==', cedula).get();
-    const entradas = todasSnap.docs.map((d) => d.data());
-
-    const yaEnMiLista = entradas.some((e) => e.nombreConcejal === nombreConcejal);
-    const otrosConcejales = entradas
-      .filter((e) => e.nombreConcejal !== nombreConcejal)
-      .map((e) => e.nombreConcejal);
+    const propioSnap = await db.collection('votantesConcejal').doc(`${cedula}__${nombreConcejal}`).get();
+    const yaEnMiLista = propioSnap.exists;
 
     const registroSnap = await db.collection('registros').doc(cedula).get();
     const yaRegistrado = registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO';
@@ -42,7 +38,6 @@ router.get('/buscar/:cedula', requiereRol('concejal'), async (req, res) => {
       cedula,
       nombresApellidos: padron.nombresApellidos,
       yaEnMiLista,
-      otrosConcejales,
       yaRegistrado,
       origenRegistro: yaRegistrado ? registroSnap.data().origenRegistro : null,
     });

@@ -6,8 +6,11 @@ async function renderAdmin(root, perfil) {
     </header>
     <main class="contenido">
       <div id="totales" class="grid-totales"></div>
-      <button type="button" id="btn-pdf-listas" class="secundario" style="width:100%; margin-bottom:16px;">
+      <button type="button" id="btn-pdf-listas" class="secundario" style="width:100%; margin-bottom:8px;">
         📄 Generar PDF de listas de concejales
+      </button>
+      <button type="button" id="btn-pdf-duplicados" class="secundario" style="width:100%; margin-bottom:16px;">
+        ⚠ Generar reporte de duplicados
       </button>
       <h3>Por escuela</h3>
       <div id="por-escuela"></div>
@@ -33,6 +36,20 @@ async function renderAdmin(root, perfil) {
       return;
     }
     generarPDFListasConcejales(datos);
+  });
+
+  document.getElementById('btn-pdf-duplicados').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-pdf-duplicados');
+    btn.disabled = true;
+    btn.textContent = 'Generando...';
+    const { ok, datos } = await window.Api.dashboardAdminDuplicados();
+    btn.disabled = false;
+    btn.textContent = '⚠ Generar reporte de duplicados';
+    if (!ok) {
+      window.Notificaciones.mostrarModal('No se pudo generar', datos?.error || 'No se pudo generar el reporte.');
+      return;
+    }
+    generarPDFDuplicados(datos);
   });
 
   function tabla(objeto) {
@@ -145,6 +162,80 @@ function generarPDFListasConcejales(datos) {
         <thead>
           <tr>
             <th>#</th><th>Opción</th><th>Concejal</th><th>Lista</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th><th>Duplicado</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+      <script>window.onload = () => window.print();</script>
+    </body>
+    </html>
+  `;
+
+  const ventana = window.open('', '_blank');
+  if (!ventana) {
+    window.Notificaciones.mostrarModal(
+      'Ventana bloqueada',
+      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
+    );
+    return;
+  }
+  ventana.document.open();
+  ventana.document.write(html);
+  ventana.document.close();
+}
+
+/**
+ * Abre una pestaña con el reporte de cedulas que figuran en 2 o mas listas
+ * de concejales — EXCLUSIVO del admin, los concejales nunca ven esto. Una
+ * fila por cedula, con todos los concejales que la tienen listados juntos.
+ */
+function generarPDFDuplicados(datos) {
+  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
+
+  const filas = datos.duplicados
+    .map(
+      (d, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${d.cedula}</td>
+      <td>${d.nombresApellidos || ''}</td>
+      <td>${d.local || '-'}</td>
+      <td>${d.mesa ?? '-'}</td>
+      <td>${d.estadoGestion === 'REGISTRADO' ? `Registrado (${d.origenRegistro || ''})` : 'Pendiente'}</td>
+      <td>${d.cantidadConcejales}</td>
+      <td>${d.concejales.map((c) => `${c.nombreConcejal}${c.caudillo ? ` (caudillo: ${c.caudillo})` : ''}`).join('<br>')}</td>
+    </tr>`
+    )
+    .join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Reporte de duplicados - Control Electoral SJA</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+        h1 { font-size: 1.3rem; margin-bottom: 4px; }
+        .sub { color: #555; font-size: 0.85rem; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+        th { background: #f1f1f1; }
+        tr:nth-child(even) { background: #fef9c3; }
+        @media print {
+          body { padding: 0; }
+          button { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Reporte de duplicados — Control Electoral SJA</h1>
+      <p class="sub">Generado el ${generadoEl} · Confidencial: uso exclusivo del administrador</p>
+      <p><strong>${datos.total}</strong> cédulas figuran en 2 o más listas de concejales.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Estado</th><th>Cant.</th><th>Concejales</th>
           </tr>
         </thead>
         <tbody>${filas}</tbody>

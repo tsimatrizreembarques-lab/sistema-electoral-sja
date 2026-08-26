@@ -79,14 +79,9 @@ async function renderConcejal(root, perfil) {
       `;
       return;
     }
-    let aviso = '';
-    if (datos.otrosConcejales.length > 0) {
-      aviso = `<p class="advertencia">Ya figura en la lista de: ${datos.otrosConcejales.join(', ')}. Se resolverá en el puesto de comando el día de la elección.</p>`;
-    }
     prev.innerHTML = `
       <div class="tarjeta">
         <h3>${datos.nombresApellidos}</h3>
-        ${aviso}
         <input id="caudillo-agregar" type="text" placeholder="Caudillo (opcional)" />
         <button id="btn-confirmar-agregar" class="primario">Agregar a mi lista</button>
       </div>
@@ -164,14 +159,13 @@ async function renderConcejal(root, perfil) {
     document.getElementById('lista').innerHTML = datos.votantes
       .map(
         (v) => `
-      <div class="fila-votante ${v.estadoGestion === 'REGISTRADO' ? 'ok' : ''} ${v.duplicado ? 'duplicado' : ''}">
+      <div class="fila-votante ${v.estadoGestion === 'REGISTRADO' ? 'ok' : ''}">
         <span class="icono-estado">${v.estadoGestion === 'REGISTRADO' ? '✓' : '○'}</span>
         <span class="nombre-votante">
           ${v.nombresApellidos}
           <span class="sub"> · CI: ${v.cedula}</span>
           ${v.local ? `<span class="sub"> · ${v.local}${v.mesa ? ` — Mesa ${v.mesa}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${v.caudillo}</span>` : ''}
-          ${v.duplicado ? `<span class="advertencia-duplicado">⚠ Duplicado en otra lista</span>` : ''}
           ${
             Array.isArray(v.historial) && v.historial.length > 1
               ? `<span class="sub" title="${window.formatearHistorial(v.historial).replace(/"/g, '&quot;')}"> · ⓘ ${v.historial.length} intentos de registro (mantené tocado para ver)</span>`
@@ -214,13 +208,12 @@ function generarPDFLista(datos, perfil) {
     return (a.nombresApellidos || '').localeCompare(b.nombresApellidos || '');
   });
 
-  const totalDuplicados = votantes.filter((v) => v.duplicado).length;
   const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
 
   const filas = votantes
     .map(
       (v, i) => `
-    <tr class="${v.duplicado ? 'duplicado' : ''}">
+    <tr>
       <td>${i + 1}</td>
       <td>${v.cedula}</td>
       <td>${v.nombresApellidos || ''}</td>
@@ -228,7 +221,6 @@ function generarPDFLista(datos, perfil) {
       <td>${v.mesa ?? '-'}</td>
       <td>${v.caudillo || '-'}</td>
       <td>${v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente'}</td>
-      <td>${v.duplicado ? '⚠ DUPLICADO' : ''}</td>
     </tr>`
     )
     .join('');
@@ -248,8 +240,6 @@ function generarPDFLista(datos, perfil) {
         table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
         th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
         th { background: #f1f1f1; }
-        tr.duplicado { background: #fef9c3; }
-        tr.duplicado td:last-child { color: #92400e; font-weight: 700; }
         @media print {
           body { padding: 0; }
           button { display: none; }
@@ -263,12 +253,11 @@ function generarPDFLista(datos, perfil) {
         <span>Total asignado <strong>${datos.totalAsignado}</strong></span>
         <span>Registrados <strong>${datos.totalRegistrado}</strong></span>
         <span>Pendientes <strong>${datos.totalPendiente}</strong></span>
-        <span>Duplicados <strong>${totalDuplicados}</strong></span>
       </div>
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th><th>Duplicado</th>
+            <th>#</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th>
           </tr>
         </thead>
         <tbody>${filas}</tbody>

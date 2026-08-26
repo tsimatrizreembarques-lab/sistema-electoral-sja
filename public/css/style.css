@@ -118,9 +118,7 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
   font-size: 0.9rem;
 }
 .fila-votante.ok { border-left: 4px solid var(--verde); background: #f0fdf4; }
-.fila-votante.duplicado { background: #fef9c3; border-left: 4px solid #ca8a04; }
 .fila-votante .estado { color: var(--gris); font-size: 0.8rem; text-align: right; }
-.advertencia-duplicado { display: block; color: #92400e; font-size: 0.75rem; font-weight: 600; }
 
 .acciones-fila { display: flex; gap: 6px; flex-shrink: 0; }
 .btn-registrar {

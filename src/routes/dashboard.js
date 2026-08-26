@@ -144,6 +144,70 @@ router.get('/admin/listas', requiereRol('admin'), async (req, res) => {
 });
 
 /**
+ * GET /api/dashboard/admin/duplicados
+ * Reporte de cedulas que figuran en la lista de 2 o mas concejales, EXCLUSIVO
+ * para el admin — los concejales nunca ven esta informacion (ni siquiera que
+ * existe un duplicado), solo el admin la puede consultar para resolverlo.
+ */
+router.get('/admin/duplicados', requiereRol('admin'), async (req, res) => {
+  try {
+    const db = getFirestore();
+
+    const votantesConcejalSnap = await db.collection('votantesConcejal').get();
+    const porCedula = {};
+    votantesConcejalSnap.forEach((doc) => {
+      const v = doc.data();
+      if (!porCedula[v.cedula]) porCedula[v.cedula] = [];
+      porCedula[v.cedula].push({ nombreConcejal: v.nombreConcejal, lista: v.lista ?? null, caudillo: v.caudillo || null });
+    });
+
+    const entradasDuplicadas = Object.entries(porCedula).filter(([, concejales]) => concejales.length > 1);
+    const cedulas = entradasDuplicadas.map(([cedula]) => cedula);
+
+    const padronPorCedula = {};
+    const registroPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < cedulas.length; i += LOTE) {
+      const lote = cedulas.slice(i, i + LOTE);
+      if (lote.length === 0) continue;
+      const [padronSnap, registrosSnap] = await Promise.all([
+        db.collection('padron').where('cedula', 'in', lote).get(),
+        db.collection('registros').where('cedula', 'in', lote).get(),
+      ]);
+      padronSnap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+      registrosSnap.forEach((d) => { registroPorCedula[d.id] = d.data(); });
+    }
+
+    const duplicados = entradasDuplicadas
+      .map(([cedula, concejales]) => {
+        const padron = padronPorCedula[cedula] || {};
+        const registro = registroPorCedula[cedula];
+        const registrado = registro?.estadoGestion === 'REGISTRADO';
+        return {
+          cedula,
+          nombresApellidos: padron.nombresApellidos || '',
+          local: padron.local || null,
+          mesa: padron.mesa ?? null,
+          cantidadConcejales: concejales.length,
+          concejales: concejales.sort((a, b) => (a.nombreConcejal || '').localeCompare(b.nombreConcejal || '')),
+          estadoGestion: registrado ? 'REGISTRADO' : 'PENDIENTE',
+          origenRegistro: registrado ? registro.origenRegistro : null,
+        };
+      })
+      .sort((a, b) => b.cantidadConcejales - a.cantidadConcejales || (a.nombresApellidos || '').localeCompare(b.nombresApellidos || ''));
+
+    res.json({
+      generadoEn: new Date().toISOString(),
+      total: duplicados.length,
+      duplicados,
+    });
+  } catch (error) {
+    console.error('Error al generar reporte de duplicados:', error);
+    res.status(500).json({ error: 'Error interno al generar el reporte.' });
+  }
+});
+
+/**
  * GET /api/dashboard/concejal
  * Vista individual: solo los votantes donde el concejal quedo como ASIGNADO
  * (el confirmado en comando/mesa, no el simple preasignado que pudo quedar ambiguo),
@@ -170,31 +234,19 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       caudillosPorCedula[d.data().cedula] = d.data().caudillo || null;
     });
 
-    // Duplicados: cedulas de MI lista que tambien figuran en la lista de otro
-    // concejal (se resuelven en comando, pero se muestran como alerta aca).
-    const todasMisCedulas = [...new Set([...registrados.map((r) => r.cedula), ...preasignadosSnap.docs.map((d) => d.data().cedula)])];
-    const conteoGlobalPorCedula = {};
-    const LOTE = 30;
-    for (let i = 0; i < todasMisCedulas.length; i += LOTE) {
-      const lote = todasMisCedulas.slice(i, i + LOTE);
-      if (lote.length === 0) continue;
-      const snap = await db.collection('votantesConcejal').where('cedula', 'in', lote).get();
-      snap.forEach((d) => {
-        const c = d.data().cedula;
-        conteoGlobalPorCedula[c] = (conteoGlobalPorCedula[c] || 0) + 1;
-      });
-    }
-    const esDuplicado = (cedula) => (conteoGlobalPorCedula[cedula] || 0) > 1;
+    // Nota: si una cedula esta tambien en la lista de OTRO concejal, eso
+    // nunca se calcula ni se expone aca — esa visibilidad es exclusiva del
+    // admin (reporte de duplicados). El concejal no se entera.
 
     const registradosConCaudillo = registrados.map((r) => ({
       ...r,
       caudillo: caudillosPorCedula[r.cedula] || null,
-      duplicado: esDuplicado(r.cedula),
     }));
 
     // Preasignados a este concejal que todavia no tienen ningun registro.
     // El padron de cada uno se trae en lotes (no uno por uno), para no hacer
     // N consultas secuenciales a Firestore en un dashboard que se refresca cada 15s.
+    const LOTE = 30;
     const cedulasPendientes = preasignadosSnap.docs
       .map((d) => d.data().cedula)
       .filter((c) => !cedulasRegistradas.has(c));
@@ -219,7 +271,6 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
         mesa: padron.mesa || null,
         caudillo: v.caudillo || null,
         estadoGestion: 'PENDIENTE',
-        duplicado: esDuplicado(v.cedula),
       });
     }
 

@@ -50,6 +50,10 @@ const Api = {
     return this._fetch('/api/dashboard/admin/listas');
   },
 
+  dashboardAdminDuplicados() {
+    return this._fetch('/api/dashboard/admin/duplicados');
+  },
+
   dashboardConcejal() {
     return this._fetch('/api/dashboard/concejal');
   },
