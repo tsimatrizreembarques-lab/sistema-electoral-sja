@@ -78,19 +78,17 @@ router.get('/:cedula', requiereRol('comando', 'mesa', 'admin'), async (req, res)
 /** Describe desde donde se esta intentando registrar, para mensajes e historial. */
 function describirOrigen(usuario) {
   if (usuario.rol === 'comando') return `Puesto Comando (${usuario.local})`;
-  if (usuario.rol === 'concejal') return `el concejal ${usuario.nombreConcejal}`;
   return `Mesa ${usuario.mesa} — ${usuario.local}`;
 }
 
 /**
- * Registra (o actualiza) el paso de un votante por comando, mesa o concejal.
+ * Registra (o actualiza) el paso de un votante por comando o mesa.
  *
- * Es una trazabilidad con orden real: comando (o directamente el concejal)
- * registra PRIMERO cuando el votante se mobiliza, y Mesa confirma AL FINAL
- * que efectivamente voto — por eso Mesa nunca se bloquea, aunque ya este
- * REGISTRADO por otro puesto: eso es el flujo normal, no un conflicto.
- * Comando y concejal si se bloquean entre si (evitan duplicar el conteo),
- * pero igual queda una traza del intento (historial + Sheets).
+ * Es una trazabilidad con orden real: Comando registra PRIMERO cuando el
+ * votante se moviliza, y Mesa confirma AL FINAL que efectivamente voto — por
+ * eso Mesa nunca se bloquea, aunque ya este REGISTRADO por Comando: eso es el
+ * flujo normal, no un conflicto. Los concejales NO registran (solo arman sus
+ * listas); registrar es exclusivo del Puesto Comando y de Mesa.
  */
 async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsignado, dispositivoId, forzar, fechaHoraCliente }) {
   const db = getFirestore();
@@ -102,8 +100,8 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
   }
   const padron = padronSnap.data();
 
-  // Preasignados: hacen falta ANTES de tocar el registro, tanto para el chequeo
-  // de pertenencia del concejal como para completar lista/concejal asignados.
+  // Preasignados: hacen falta ANTES de tocar el registro, para completar
+  // lista/concejal asignados a partir de las listas de los concejales.
   const preasignadosSnap = await db
     .collection('votantesConcejal')
     .where('cedula', '==', cedulaNorm)
@@ -114,21 +112,9 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
   let concejalFinal = concejalAsignado ?? preasignados[0]?.nombreConcejal ?? null;
   let forzarFinal = Boolean(forzar);
 
-  if (usuario.rol === 'concejal') {
-    // El concejal solo puede confirmar votantes de su propia lista (nunca a
-    // nombre de otro, y nunca sobreescribir un registro ya hecho por comando
-    // o mesa) — se corta aca, ANTES de tocar el registro, para que un concejal
-    // no pueda usar esta ruta para averiguar el estado de cedulas ajenas.
-    const propio = preasignados.find((p) => p.nombreConcejal === usuario.nombreConcejal);
-    if (!propio) {
-      return { ok: false, codigo: 403, mensaje: 'Esa cedula no esta en tu lista.' };
-    }
-    listaFinal = propio.lista ?? null;
-    concejalFinal = usuario.nombreConcejal;
-    forzarFinal = false;
-  } else if (usuario.rol === 'mesa') {
-    // Mesa es el ultimo paso: siempre puede confirmar, aunque comando o el
-    // concejal ya lo hayan registrado antes. Nunca se bloquea.
+  if (usuario.rol === 'mesa') {
+    // Mesa es el ultimo paso: siempre puede confirmar, aunque Comando ya lo
+    // haya registrado antes. Nunca se bloquea.
     forzarFinal = true;
   }
 
@@ -148,8 +134,6 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     const origenRegistro =
       usuario.rol === 'comando'
         ? `Registrado en Puesto Comando (${usuario.local})`
-        : usuario.rol === 'concejal'
-        ? `Confirmado por el concejal ${usuario.nombreConcejal} (reporte manual)`
         : `Registrado como Veedor Mesa ${usuario.mesa} — ${usuario.local}`;
 
     const tipo = !yaEstabaRegistrado
@@ -268,11 +252,10 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
 
 /**
  * POST /api/votantes/registrar
- * Registro individual (uso normal con conexion). El concejal tambien puede
- * usar esta ruta para confirmar, desde su propia lista, que alguien ya paso
- * por comando o mesa (reporte manual, ej. porque el votante lo aviso).
+ * Registro individual (uso normal con conexion). Exclusivo de Puesto Comando
+ * y Mesa: los concejales no registran, solo arman sus listas.
  */
-router.post('/registrar', requiereRol('comando', 'mesa', 'concejal'), async (req, res) => {
+router.post('/registrar', requiereRol('comando', 'mesa'), async (req, res) => {
   try {
     const resultado = await registrarVotante({
       usuario: req.usuario,

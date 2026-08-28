@@ -34,12 +34,14 @@ router.get('/buscar/:cedula', requiereRol('concejal'), async (req, res) => {
     const registroSnap = await db.collection('registros').doc(cedula).get();
     const yaRegistrado = registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO';
 
+    // Solo el booleano yaRegistrado: no se expone origenRegistro ni ningun
+    // otro detalle, para que el concejal nunca vea rastro de que hizo otro
+    // concejal (ni de que puesto/dispositivo) sobre esa cedula.
     res.json({
       cedula,
       nombresApellidos: padron.nombresApellidos,
       yaEnMiLista,
       yaRegistrado,
-      origenRegistro: yaRegistrado ? registroSnap.data().origenRegistro : null,
     });
   } catch (error) {
     console.error('Error al buscar cedula para concejal:', error);
@@ -71,7 +73,7 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
     const registroSnap = await db.collection('registros').doc(cedula).get();
     if (registroSnap.exists && registroSnap.data().estadoGestion === 'REGISTRADO') {
       return res.status(403).json({
-        error: `No se puede agregar: esta persona ya fue registrada (${registroSnap.data().origenRegistro}).`,
+        error: 'No se puede agregar: esta persona ya fue registrada.',
       });
     }
 

@@ -74,7 +74,7 @@ async function renderConcejal(root, perfil) {
       prev.innerHTML = `
         <div class="tarjeta alerta">
           <p>${datos.nombresApellidos}</p>
-          <p class="sub">Ya fue registrado: ${datos.origenRegistro}. No se puede agregar a una lista después de votar.</p>
+          <p class="sub">Ya fue registrado. No se puede agregar a una lista después de votar.</p>
         </div>
       `;
       return;
@@ -114,26 +114,6 @@ async function renderConcejal(root, perfil) {
       await cargar();
       return;
     }
-
-    const btnVoto = e.target.closest('.btn-registrar');
-    if (btnVoto) {
-      const cedula = btnVoto.dataset.cedula;
-      const confirmado = await window.Notificaciones.confirmarModal(
-        'Confirmar registro',
-        '¿Confirmás que esta persona ya pasó por comando o mesa? Se va a sumar al conteo oficial.',
-        'Sí, registrar'
-      );
-      if (!confirmado) return;
-      btnVoto.disabled = true;
-      const resp = await window.Api.registrarVotante({ cedula, dispositivoId: `concejal-${perfil.usuario}` });
-      if (!resp.ok) {
-        const mensaje = resp.datos?.mensaje || resp.datos?.error || 'No se pudo confirmar.';
-        window.Notificaciones.avisar(resp.status === 409 ? 'Votante ya registrado' : 'No se pudo confirmar', mensaje);
-        btnVoto.disabled = false;
-        return;
-      }
-      await cargar();
-    }
   });
 
   async function cargar() {
@@ -166,23 +146,13 @@ async function renderConcejal(root, perfil) {
           <span class="sub"> · CI: ${v.cedula}</span>
           ${v.local ? `<span class="sub"> · ${v.local}${v.mesa ? ` — Mesa ${v.mesa}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${v.caudillo}</span>` : ''}
-          ${
-            Array.isArray(v.historial) && v.historial.length > 1
-              ? `<span class="sub" title="${window.formatearHistorial(v.historial).replace(/"/g, '&quot;')}"> · ⓘ ${v.historial.length} intentos de registro (mantené tocado para ver)</span>`
-              : ''
-          }
         </span>
-        <span class="estado">${
-          v.estadoGestion === 'REGISTRADO'
-            ? `Registrado (${v.origenRegistro || ''})`
-            : 'Pendiente'
-        }</span>
+        <span class="estado">${v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente'}</span>
         <span class="acciones-fila">
           ${
             v.estadoGestion === 'REGISTRADO'
               ? ''
-              : `<button class="btn-registrar" data-cedula="${v.cedula}">Registrar</button>
-                 <button class="btn-eliminar" data-cedula="${v.cedula}">Eliminar</button>`
+              : `<button class="btn-eliminar" data-cedula="${v.cedula}">Eliminar</button>`
           }
         </span>
       </div>`

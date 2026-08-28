@@ -237,10 +237,18 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
     // Nota: si una cedula esta tambien en la lista de OTRO concejal, eso
     // nunca se calcula ni se expone aca — esa visibilidad es exclusiva del
     // admin (reporte de duplicados). El concejal no se entera.
-
+    //
+    // Se devuelve SOLO una proyeccion limpia de cada registro: nada de
+    // historial, dispositivoId, ni el detalle interno de origen — asi un
+    // concejal nunca ve rastro de la actividad de otro concejal sobre una
+    // cedula (intentos bloqueados, confirmaciones, dispositivos, etc.).
     const registradosConCaudillo = registrados.map((r) => ({
-      ...r,
+      cedula: r.cedula,
+      nombresApellidos: r.nombresApellidos || null,
+      local: r.local || null,
+      mesa: r.mesa ?? null,
       caudillo: caudillosPorCedula[r.cedula] || null,
+      estadoGestion: 'REGISTRADO',
     }));
 
     // Preasignados a este concejal que todavia no tienen ningun registro.

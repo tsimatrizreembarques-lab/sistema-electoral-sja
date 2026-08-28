@@ -10,6 +10,7 @@
     "import:votantes-concejal": "node scripts/import-votantes-concejal.js",
     "export:listas-concejales": "node scripts/export-listas-concejales.js",
     "recalcular:stats": "node scripts/recalcular-stats.js",
+    "borrar:registros": "node scripts/borrar-registros.js",
     "create-user": "node scripts/create-user.js"
   },
   "dependencies": {
