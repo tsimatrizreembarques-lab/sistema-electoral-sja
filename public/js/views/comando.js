@@ -27,10 +27,7 @@ async function renderComando(root, perfil) {
     </main>
   `;
 
-  document.getElementById('btn-salir').addEventListener('click', async () => {
-    await window.DBLocal.cerrarSesion();
-    window.App.irA('login');
-  });
+  document.getElementById('btn-salir').addEventListener('click', () => window.App.salir());
 
   modoComando = 'registrar';
   document.getElementById('modo-registrar').addEventListener('click', () => actualizarModoComando('registrar'));
@@ -46,13 +43,9 @@ async function renderComando(root, perfil) {
     });
   }
 
-  window.Sync.iniciarSyncAutomatico(({ estado, pendientes }) => {
+  window.Sync.iniciarSyncAutomatico((info) => {
     const el = document.getElementById('estado-sync');
-    if (!el) return;
-    if (estado === 'sincronizando') el.textContent = 'Sincronizando…';
-    else if (estado === 'al-dia') el.textContent = 'Todo sincronizado';
-    else if (estado === 'sincronizado') el.textContent = pendientes > 0 ? `${pendientes} pendientes` : 'Todo sincronizado';
-    else if (estado === 'error') el.textContent = 'Sin conexión (guardando local)';
+    if (el) el.textContent = window.Sync.textoEstadoSync(info);
   });
 
   document.getElementById('form-buscar').addEventListener('submit', async (e) => {
@@ -67,7 +60,12 @@ async function renderComando(root, perfil) {
     if (modoComando === 'consultar') {
       // Consultar: busca en TODO el padron (todos los locales), no solo el propio.
       // Requiere conexion, ya que el dispositivo solo tiene descargado su local.
-      const { ok, datos } = await window.Api.buscarVotante(cedulaLimpia);
+      const { ok, status, datos } = await window.Api.buscarVotante(cedulaLimpia);
+      if (!ok && status !== 404) {
+        document.getElementById('resultado').innerHTML =
+          `<div class="tarjeta alerta">${window.escaparHTML(datos?.error || 'No se pudo consultar.')}</div>`;
+        return;
+      }
       renderResultadoComando(ok ? datos : null, cedula, perfil, modoComando, concejales);
       return;
     }
@@ -115,8 +113,8 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo, concejales
 
   if (!votante) {
     cont.innerHTML = modo === 'consultar'
-    ? `<div class="tarjeta alerta">No se encontró la cédula ${cedulaBuscada} en el padrón de SJA.</div>`
-    : `<div class="tarjeta alerta">No se encontró la cédula ${cedulaBuscada} en el padrón de este local.</div>`;
+    ? `<div class="tarjeta alerta">No se encontró la cédula ${window.escaparHTML(cedulaBuscada)} en el padrón de SJA.</div>`
+    : `<div class="tarjeta alerta">No se encontró la cédula ${window.escaparHTML(cedulaBuscada)} en el padrón de este local.</div>`;
     return;
   }
 
@@ -196,7 +194,10 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo, concejales
     </div>
   `;
 
-  document.getElementById('btn-registrar').addEventListener('click', async () => {
+  document.getElementById('btn-registrar').addEventListener('click', async (e) => {
+    // Evita el doble toque: el segundo llegaba al servidor como "intento
+    // bloqueado" del mismo puesto y ensuciaba el historial del votante.
+    e.currentTarget.disabled = true;
     const select = document.getElementById('select-concejal');
     const concejalAsignado = select.value || null;
     const listaAsignada = concejalAsignado ? select.options[select.selectedIndex].dataset.lista || null : null;

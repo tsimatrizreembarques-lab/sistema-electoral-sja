@@ -4,11 +4,17 @@
 // registro (por si ya hay señal en ese instante).
 
 let sincronizando = false;
+let syncIniciado = false;
 let onCambioEstado = () => {};
 
 async function sincronizarAhora() {
   if (sincronizando) return;
   if (!navigator.onLine) return;
+
+  // Sin sesion (ej. despues de "Salir") no se intenta: la cola se conserva
+  // y se envia cuando vuelva a entrar alguien.
+  const sesion = await window.DBLocal.obtenerSesion();
+  if (!sesion?.token) return;
 
   sincronizando = true;
   onCambioEstado({ estado: 'sincronizando' });
@@ -20,9 +26,10 @@ async function sincronizarAhora() {
       return;
     }
 
-    const { ok, datos } = await window.Api.sincronizarCola(cola);
+    const { ok, status, datos } = await window.Api.sincronizarCola(cola);
     if (!ok) {
-      onCambioEstado({ estado: 'error', pendientes: cola.length });
+      // 401 = la sesion vencio: no es falta de señal, hay que volver a entrar.
+      onCambioEstado({ estado: status === 401 ? 'sesion-vencida' : 'error', pendientes: cola.length });
       return;
     }
 
@@ -33,10 +40,13 @@ async function sincronizarAhora() {
         if (resultado.registro) {
           await window.DBLocal.marcarRegistradoLocalmente(resultado.registro);
         }
-      } else if (resultado.codigo === 409) {
-        // Conflicto real: alguien ya lo habia registrado. Se quita de la cola
-        // igual (no tiene sentido reintentar) y se avisa para revision manual.
+      } else if (resultado.codigo === 409 || resultado.codigo === 404) {
+        // 409: alguien ya lo habia registrado. 404: la cedula no esta en el
+        // padron. En ambos casos reintentar no sirve: se quita de la cola.
         await window.DBLocal.quitarDeCola(resultado.idLocal);
+        if (resultado.registroExistente) {
+          await window.DBLocal.marcarRegistradoLocalmente(resultado.registroExistente);
+        }
         conflictos += 1;
       }
       // Otros errores (500, etc.): se deja en la cola para reintentar despues.
@@ -52,11 +62,30 @@ async function sincronizarAhora() {
   }
 }
 
+/**
+ * Arranca la sincronizacion automatica UNA sola vez por carga de la app;
+ * si se vuelve a llamar (al volver a entrar a una vista) solo cambia a quien
+ * se le avisa. Antes cada visita a la vista sumaba otro intervalo y otro
+ * listener 'online'.
+ */
 function iniciarSyncAutomatico(callback) {
   onCambioEstado = callback || onCambioEstado;
-  window.addEventListener('online', sincronizarAhora);
-  setInterval(sincronizarAhora, 20000); // reintento cada 20s mientras la app esta abierta
+  if (!syncIniciado) {
+    syncIniciado = true;
+    window.addEventListener('online', sincronizarAhora);
+    setInterval(sincronizarAhora, 20000); // reintento cada 20s mientras la app esta abierta
+  }
   sincronizarAhora();
 }
 
-window.Sync = { sincronizarAhora, iniciarSyncAutomatico };
+/** Texto del indicador de sincronizacion, compartido por Comando y Mesa. */
+function textoEstadoSync({ estado, pendientes }) {
+  if (estado === 'sincronizando') return 'Sincronizando…';
+  if (estado === 'al-dia') return 'Todo sincronizado';
+  if (estado === 'sincronizado') return pendientes > 0 ? `${pendientes} pendientes` : 'Todo sincronizado';
+  if (estado === 'sesion-vencida') return 'Sesión vencida: salí y volvé a entrar';
+  if (estado === 'error') return 'Sin conexión (guardando local)';
+  return '—';
+}
+
+window.Sync = { sincronizarAhora, iniciarSyncAutomatico, textoEstadoSync };

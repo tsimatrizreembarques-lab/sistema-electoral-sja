@@ -2,6 +2,9 @@ const express = require('express');
 const { getFirestore } = require('../lib/firestore');
 const { requiereRol } = require('../lib/auth');
 const { statsRef } = require('../lib/stats');
+const { normalizarCedula } = require('../lib/normalizar');
+const { quitarDeLista } = require('../lib/listasConcejal');
+const { sincronizarListasConcejalesDebounced } = require('../lib/sheetsBackup');
 
 const router = express.Router();
 
@@ -123,6 +126,8 @@ router.get('/admin/listas', requiereRol('admin'), async (req, res) => {
           local: padron.local || null,
           mesa: padron.mesa ?? null,
           caudillo: v.caudillo || null,
+          telefono: v.telefono || null,
+          direccion: v.direccion || null,
           estadoGestion: registrado ? 'REGISTRADO' : 'PENDIENTE',
           origenRegistro: registrado ? registro.origenRegistro : null,
           duplicado: (conteoPorCedula[v.cedula] || 0) > 1,
@@ -208,6 +213,107 @@ router.get('/admin/duplicados', requiereRol('admin'), async (req, res) => {
 });
 
 /**
+ * GET /api/dashboard/admin/concejales
+ * Concejales disponibles (para el selector del admin), ordenados por opcion.
+ */
+router.get('/admin/concejales', requiereRol('admin'), async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snap = await db.collection('concejales').get();
+    const concejales = snap.docs
+      .map((d) => ({ nombreConcejal: d.id, lista: d.data().lista ?? null, opcion: d.data().opcion ?? null }))
+      .sort((a, b) => (a.opcion ?? 999) - (b.opcion ?? 999) || a.nombreConcejal.localeCompare(b.nombreConcejal));
+    res.json({ concejales });
+  } catch (error) {
+    console.error('Error al listar concejales para admin:', error);
+    res.status(500).json({ error: 'Error interno al listar concejales.' });
+  }
+});
+
+/**
+ * GET /api/dashboard/admin/lista?concejal=NOMBRE
+ * La lista de UN concejal, para que el admin la revise y pueda borrar
+ * entradas. Incluye marca de duplicado (la cedula esta en otra lista).
+ */
+router.get('/admin/lista', requiereRol('admin'), async (req, res) => {
+  try {
+    const nombreConcejal = String(req.query.concejal || '').trim();
+    if (!nombreConcejal) return res.status(400).json({ error: 'Falta el concejal.' });
+
+    const db = getFirestore();
+    const snap = await db.collection('votantesConcejal').where('nombreConcejal', '==', nombreConcejal).get();
+    const votantes = snap.docs.map((d) => d.data());
+    const cedulas = votantes.map((v) => v.cedula);
+
+    const padronPorCedula = {};
+    const registroPorCedula = {};
+    const conteoPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < cedulas.length; i += LOTE) {
+      const lote = cedulas.slice(i, i + LOTE);
+      const [padronSnap, registrosSnap, vcSnap] = await Promise.all([
+        db.collection('padron').where('cedula', 'in', lote).get(),
+        db.collection('registros').where('cedula', 'in', lote).select('cedula', 'estadoGestion').get(),
+        db.collection('votantesConcejal').where('cedula', 'in', lote).select('cedula').get(),
+      ]);
+      padronSnap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+      registrosSnap.forEach((d) => { registroPorCedula[d.id] = d.data(); });
+      vcSnap.forEach((d) => {
+        const c = d.data().cedula;
+        conteoPorCedula[c] = (conteoPorCedula[c] || 0) + 1;
+      });
+    }
+
+    const lista = votantes
+      .map((v) => {
+        const padron = padronPorCedula[v.cedula] || {};
+        return {
+          cedula: v.cedula,
+          nombresApellidos: v.nombresApellidos || padron.nombresApellidos || '',
+          local: padron.local || null,
+          mesa: padron.mesa ?? null,
+          caudillo: v.caudillo || null,
+          telefono: v.telefono || null,
+          direccion: v.direccion || null,
+          estadoGestion: registroPorCedula[v.cedula]?.estadoGestion === 'REGISTRADO' ? 'REGISTRADO' : 'PENDIENTE',
+          duplicado: (conteoPorCedula[v.cedula] || 0) > 1,
+        };
+      })
+      .sort((a, b) => a.nombresApellidos.localeCompare(b.nombresApellidos));
+
+    res.json({ nombreConcejal, total: lista.length, lista });
+  } catch (error) {
+    console.error('Error al obtener lista de concejal para admin:', error);
+    res.status(500).json({ error: 'Error interno al obtener la lista.' });
+  }
+});
+
+/**
+ * DELETE /api/dashboard/admin/lista?concejal=NOMBRE&cedula=123
+ * El admin quita una cedula de la lista de cualquier concejal (ej. para
+ * resolver un duplicado). A diferencia del concejal, puede hacerlo aunque
+ * ya este registrada: el registro de asistencia (coleccion registros) no se
+ * toca, solo deja de figurar en esa lista.
+ */
+router.delete('/admin/lista', requiereRol('admin'), async (req, res) => {
+  try {
+    const nombreConcejal = String(req.query.concejal || '').trim();
+    const cedula = normalizarCedula(req.query.cedula);
+    if (!nombreConcejal || !cedula) return res.status(400).json({ error: 'Faltan el concejal o la cedula.' });
+
+    const db = getFirestore();
+    const borrado = await quitarDeLista(db, cedula, nombreConcejal);
+    if (!borrado) return res.status(404).json({ error: 'Esa cedula no esta en la lista de ese concejal.' });
+
+    sincronizarListasConcejalesDebounced(db);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error al eliminar votante de lista (admin):', error);
+    res.status(500).json({ error: 'Error interno al eliminar el votante.' });
+  }
+});
+
+/**
  * GET /api/dashboard/concejal
  * Vista individual: solo los votantes donde el concejal quedo como ASIGNADO
  * (el confirmado en comando/mesa, no el simple preasignado que pudo quedar ambiguo),
@@ -229,9 +335,9 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
 
     const registrados = registradosSnap.docs.map((d) => d.data());
     const cedulasRegistradas = new Set(registrados.map((r) => r.cedula));
-    const caudillosPorCedula = {};
+    const preasignadoPorCedula = {};
     preasignadosSnap.docs.forEach((d) => {
-      caudillosPorCedula[d.data().cedula] = d.data().caudillo || null;
+      preasignadoPorCedula[d.data().cedula] = d.data();
     });
 
     // Nota: si una cedula esta tambien en la lista de OTRO concejal, eso
@@ -247,7 +353,9 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       nombresApellidos: r.nombresApellidos || null,
       local: r.local || null,
       mesa: r.mesa ?? null,
-      caudillo: caudillosPorCedula[r.cedula] || null,
+      caudillo: preasignadoPorCedula[r.cedula]?.caudillo || null,
+      telefono: preasignadoPorCedula[r.cedula]?.telefono || null,
+      direccion: preasignadoPorCedula[r.cedula]?.direccion || null,
       estadoGestion: 'REGISTRADO',
     }));
 
@@ -259,30 +367,45 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       .map((d) => d.data().cedula)
       .filter((c) => !cedulasRegistradas.has(c));
 
+    // Tambien se mira si ya votaron: alguien de esta lista puede haber sido
+    // registrado con OTRO concejal asignado (o sin concejal) en Comando. Antes
+    // quedaba como "Pendiente" para siempre y el boton Eliminar fallaba. Se
+    // muestra como registrado, pero sin decir con quien (eso es solo del admin).
     const padronPorCedula = {};
+    const yaVotaron = new Set();
     for (let i = 0; i < cedulasPendientes.length; i += LOTE) {
       const lote = cedulasPendientes.slice(i, i + LOTE);
       if (lote.length === 0) continue;
-      const snap = await db.collection('padron').where('cedula', 'in', lote).get();
-      snap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+      const [padronSnap, registrosSnap] = await Promise.all([
+        db.collection('padron').where('cedula', 'in', lote).get(),
+        db.collection('registros').where('cedula', 'in', lote).select('cedula', 'estadoGestion').get(),
+      ]);
+      padronSnap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+      registrosSnap.forEach((d) => {
+        if (d.data().estadoGestion === 'REGISTRADO') yaVotaron.add(d.id);
+      });
     }
 
     const pendientes = [];
+    const registradosConOtro = [];
     for (const doc of preasignadosSnap.docs) {
       const v = doc.data();
       if (cedulasRegistradas.has(v.cedula)) continue;
       const padron = padronPorCedula[v.cedula] || {};
-      pendientes.push({
+      const item = {
         cedula: v.cedula,
         nombresApellidos: padron.nombresApellidos || '(no encontrado en padron)',
         local: padron.local || null,
-        mesa: padron.mesa || null,
+        mesa: padron.mesa ?? null,
         caudillo: v.caudillo || null,
-        estadoGestion: 'PENDIENTE',
-      });
+        telefono: v.telefono || null,
+        direccion: v.direccion || null,
+        estadoGestion: yaVotaron.has(v.cedula) ? 'REGISTRADO' : 'PENDIENTE',
+      };
+      (yaVotaron.has(v.cedula) ? registradosConOtro : pendientes).push(item);
     }
 
-    const todosLosVotantes = [...registradosConCaudillo, ...pendientes];
+    const todosLosVotantes = [...registradosConCaudillo, ...registradosConOtro, ...pendientes];
 
     // Desglose por mesa: cuantos de MIS votantes ya votaron vs el total asignado en esa mesa.
     const porMesa = {};
@@ -296,8 +419,8 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
 
     res.json({
       nombreConcejal,
-      totalAsignado: registrados.length + pendientes.length,
-      totalRegistrado: registrados.length,
+      totalAsignado: todosLosVotantes.length,
+      totalRegistrado: registrados.length + registradosConOtro.length,
       totalPendiente: pendientes.length,
       porMesa,
       votantes: todosLosVotantes,

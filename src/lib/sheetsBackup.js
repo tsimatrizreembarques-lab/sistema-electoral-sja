@@ -25,7 +25,7 @@ function getSheetsClient() {
 
 const SHEET_NAME = 'REGISTROS';
 const SHEET_LISTAS = 'LISTAS_CONCEJALES';
-const ENCABEZADOS_LISTAS = ['Opcion', 'Concejal', 'Lista', 'Cedula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Estado'];
+const ENCABEZADOS_LISTAS = ['Opcion', 'Concejal', 'Lista', 'Cedula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Estado', 'Telefono', 'Direccion'];
 
 /** Formatea una fecha (ISO UTC o Date) a hora local de Paraguay, legible. */
 function formatearFechaPY(valor) {
@@ -199,6 +199,8 @@ async function sincronizarListasConcejales(db) {
           padron.mesa ?? '',
           v.caudillo ?? '',
           estadoPorCedula[v.cedula] === 'REGISTRADO' ? 'REGISTRADO' : 'PENDIENTE',
+          v.telefono || '',
+          v.direccion || '',
         ];
       });
 

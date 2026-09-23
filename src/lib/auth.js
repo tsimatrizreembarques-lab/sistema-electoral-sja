@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const { getFirestore } = require('./firestore');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cambiar-este-secreto-en-produccion';
-const JWT_EXPIRES_IN = '18h'; // dura toda una jornada electoral larga
+const JWT_EXPIRES_IN = '36h'; // cubre desde la carga del paquete la noche anterior hasta el cierre del dia de la eleccion
 
 /**
  * Roles del sistema:

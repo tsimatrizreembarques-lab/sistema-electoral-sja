@@ -30,18 +30,11 @@ async function renderMesa(root, perfil) {
 
   modoBusquedaMesa = 'orden';
 
-  document.getElementById('btn-salir').addEventListener('click', async () => {
-    await window.DBLocal.cerrarSesion();
-    window.App.irA('login');
-  });
+  document.getElementById('btn-salir').addEventListener('click', () => window.App.salir());
 
-  window.Sync.iniciarSyncAutomatico(({ estado, pendientes }) => {
+  window.Sync.iniciarSyncAutomatico((info) => {
     const el = document.getElementById('estado-sync');
-    if (!el) return;
-    if (estado === 'sincronizando') el.textContent = 'Sincronizando';
-    else if (estado === 'al-dia') el.textContent = 'Todo sincronizado';
-    else if (estado === 'sincronizado') el.textContent = pendientes > 0 ? `${pendientes} pendientes` : 'Todo sincronizado';
-    else if (estado === 'error') el.textContent = 'Sin conexión (guardando local)';
+    if (el) el.textContent = window.Sync.textoEstadoSync(info);
   });
 
   function actualizarModo(nuevoModo) {
@@ -153,7 +146,7 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
   const cont = document.getElementById('resultado');
 
   if (!votante) {
-    cont.innerHTML = `<div class="tarjeta alerta">No se encontró "${valorBuscado}" en esta mesa.</div>`;
+    cont.innerHTML = `<div class="tarjeta alerta">No se encontró "${window.escaparHTML(valorBuscado)}" en esta mesa.</div>`;
     return;
   }
 
@@ -175,7 +168,8 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
         <button id="btn-forzar" class="secundario">Sí, confirmar de todas formas</button>
       </div>
     `;
-    document.getElementById('btn-forzar').addEventListener('click', () => {
+    document.getElementById('btn-forzar').addEventListener('click', (e) => {
+      e.currentTarget.disabled = true;
       confirmarRegistroMesa(votante, perfil);
     });
     window.Notificaciones?.avisar(
@@ -193,7 +187,8 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
     </div>
   `;
 
-  document.getElementById('btn-registrar').addEventListener('click', () => {
+  document.getElementById('btn-registrar').addEventListener('click', (e) => {
+    e.currentTarget.disabled = true; // evita registrar dos veces con doble toque
     confirmarRegistroMesa(votante, perfil);
   });
 }

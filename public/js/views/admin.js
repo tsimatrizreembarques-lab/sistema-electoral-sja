@@ -1,4 +1,6 @@
 async function renderAdmin(root, perfil) {
+  const esc = window.escaparHTML;
+
   root.innerHTML = `
     <header class="encabezado">
       <div><strong>Dashboard Administrador</strong></div>
@@ -16,13 +18,20 @@ async function renderAdmin(root, perfil) {
       <div id="por-escuela"></div>
       <h3>Por concejal</h3>
       <div id="por-concejal"></div>
+
+      <h3>Gestionar listas de concejales</h3>
+      <div class="tarjeta">
+        <select id="select-lista-concejal" class="selector">
+          <option value="">Elegí un concejal…</option>
+        </select>
+        <input id="filtro-lista" type="text" placeholder="Filtrar por nombre o cédula" class="oculto" />
+        <p id="resumen-lista" class="sub"></p>
+      </div>
+      <div id="lista-concejal-admin"></div>
     </main>
   `;
 
-  document.getElementById('btn-salir').addEventListener('click', async () => {
-    await window.DBLocal.cerrarSesion();
-    window.App.irA('login');
-  });
+  document.getElementById('btn-salir').addEventListener('click', () => window.App.salir());
 
   document.getElementById('btn-pdf-listas').addEventListener('click', async () => {
     const btn = document.getElementById('btn-pdf-listas');
@@ -56,7 +65,7 @@ async function renderAdmin(root, perfil) {
     const entradas = Object.entries(objeto).sort((a, b) => b[1] - a[1]);
     if (entradas.length === 0) return '<p class="sub">Sin datos aún.</p>';
     return `<div class="tabla-simple">${entradas
-      .map(([k, v]) => `<div class="fila"><span>${k}</span><strong>${v}</strong></div>`)
+      .map(([k, v]) => `<div class="fila"><span>${esc(k)}</span><strong>${v}</strong></div>`)
       .join('')}</div>`;
   }
 
@@ -68,10 +77,10 @@ async function renderAdmin(root, perfil) {
       .map(
         ([local, datos]) => `
       <div class="tarjeta">
-        <h4 style="margin:0 0 8px;">${local} <span class="sub">— ${datos.registrados}/${datos.total}</span></h4>
+        <h4 style="margin:0 0 8px;">${esc(local)} <span class="sub">— ${datos.registrados}/${datos.total}</span></h4>
         <div class="tabla-simple">
           ${datos.mesas
-            .map((m) => `<div class="fila"><span>Mesa ${m.mesa ?? '-'}</span><strong>${m.registrados}/${m.total}</strong></div>`)
+            .map((m) => `<div class="fila"><span>Mesa ${esc(m.mesa ?? '-')}</span><strong>${m.registrados}/${m.total}</strong></div>`)
             .join('')}
         </div>
       </div>`
@@ -81,7 +90,7 @@ async function renderAdmin(root, perfil) {
 
   async function cargar() {
     const { ok, datos } = await window.Api.dashboardAdmin();
-    if (!ok) return;
+    if (!ok || !document.getElementById('totales')) return;
 
     document.getElementById('totales').innerHTML = `
       <div class="tarjeta"><span class="num">${datos.totalPadron}</span><span>Padrón total</span></div>
@@ -96,8 +105,114 @@ async function renderAdmin(root, perfil) {
     document.getElementById('por-concejal').innerHTML = tabla(datos.porConcejal);
   }
 
-  await cargar();
-  setInterval(cargar, 45000); // el dashboard admin ahora lee un unico documento resumen, pero no hace falta mas seguido que esto
+  // --- Gestion de listas: el admin elige un concejal, ve su lista y puede
+  // quitar a cualquier persona (el concejal solo puede quitar pendientes). ---
+  let listaActual = null;
+
+  async function cargarSelectorConcejales() {
+    const { ok, datos } = await window.Api.adminListarConcejales();
+    const select = document.getElementById('select-lista-concejal');
+    if (!ok || !select) return;
+    select.innerHTML = '<option value="">Elegí un concejal…</option>' + datos.concejales
+      .map((c) => `<option value="${esc(c.nombreConcejal)}">${c.opcion ? `Opción ${esc(c.opcion)} — ` : ''}${esc(c.nombreConcejal)}${c.lista ? ` (Lista ${esc(c.lista)})` : ''}</option>`)
+      .join('');
+  }
+
+  async function cargarListaConcejal(nombreConcejal) {
+    const cont = document.getElementById('lista-concejal-admin');
+    const filtro = document.getElementById('filtro-lista');
+    const resumen = document.getElementById('resumen-lista');
+    listaActual = null;
+    cont.innerHTML = '';
+    resumen.textContent = '';
+    filtro.classList.add('oculto');
+    if (!nombreConcejal) return;
+
+    resumen.textContent = 'Cargando…';
+    const { ok, datos } = await window.Api.adminListaConcejal(nombreConcejal);
+    if (document.getElementById('select-lista-concejal')?.value !== nombreConcejal) return; // cambio de seleccion mientras cargaba
+    if (!ok) {
+      resumen.textContent = datos?.error || 'No se pudo cargar la lista.';
+      return;
+    }
+    listaActual = datos;
+    filtro.classList.remove('oculto');
+    pintarListaConcejal();
+  }
+
+  function pintarListaConcejal() {
+    if (!listaActual) return;
+    const texto = document.getElementById('filtro-lista').value.trim().toUpperCase();
+    const visibles = listaActual.lista.filter(
+      (v) => !texto || v.cedula.includes(texto) || (v.nombresApellidos || '').toUpperCase().includes(texto)
+    );
+    const registrados = listaActual.lista.filter((v) => v.estadoGestion === 'REGISTRADO').length;
+    const duplicados = listaActual.lista.filter((v) => v.duplicado).length;
+    document.getElementById('resumen-lista').textContent =
+      `${listaActual.total} en la lista · ${registrados} registrados · ${duplicados} duplicados con otra lista`;
+
+    document.getElementById('lista-concejal-admin').innerHTML = visibles.length === 0
+      ? '<p class="sub">Sin personas en esta lista.</p>'
+      : visibles
+          .map((v) => {
+            const registrado = v.estadoGestion === 'REGISTRADO';
+            const wa = window.enlaceWhatsApp(v.telefono);
+            return `
+        <div class="fila-votante ${registrado ? 'ok' : ''}">
+          <span class="icono-estado">${registrado ? '✓' : '○'}</span>
+          <span class="nombre-votante">
+            ${esc(v.nombresApellidos)}
+            <span class="sub"> · CI: ${esc(v.cedula)}</span>
+            ${v.local ? `<span class="sub"> · ${esc(v.local)}${v.mesa ? ` — Mesa ${esc(v.mesa)}` : ''}</span>` : ''}
+            ${v.caudillo ? `<span class="sub"> · Caudillo: ${esc(v.caudillo)}</span>` : ''}
+            ${v.duplicado ? '<span class="etiqueta-duplicado"> · ⚠ También en otra lista</span>' : ''}
+            ${v.direccion ? `<span class="sub contacto">📍 ${esc(v.direccion)}</span>` : ''}
+            ${wa ? `<span class="contacto"><a class="btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp ${esc(v.telefono)}</a></span>` : ''}
+          </span>
+          <span class="estado">${registrado ? 'Registrado' : 'Pendiente'}</span>
+          <span class="acciones-fila">
+            <button class="btn-eliminar" data-cedula="${esc(v.cedula)}">Eliminar</button>
+          </span>
+        </div>`;
+          })
+          .join('');
+  }
+
+  document.getElementById('select-lista-concejal').addEventListener('change', (e) => {
+    document.getElementById('filtro-lista').value = '';
+    cargarListaConcejal(e.target.value);
+  });
+  document.getElementById('filtro-lista').addEventListener('input', pintarListaConcejal);
+
+  document.getElementById('lista-concejal-admin').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-eliminar');
+    if (!btn || !listaActual) return;
+    const nombreConcejal = listaActual.nombreConcejal;
+    const v = listaActual.lista.find((x) => x.cedula === btn.dataset.cedula);
+    if (!v) return;
+
+    const aviso = v.estadoGestion === 'REGISTRADO'
+      ? '\n\nYa fue registrado: su registro de asistencia se conserva, solo deja de figurar en esta lista.'
+      : '';
+    const confirmado = await window.Notificaciones.confirmarModal(
+      'Eliminar de la lista',
+      `¿Quitar a ${esc(v.nombresApellidos)} (CI ${esc(v.cedula)}) de la lista de ${esc(nombreConcejal)}?${aviso}`,
+      'Eliminar'
+    );
+    if (!confirmado) return;
+
+    btn.disabled = true;
+    const resp = await window.Api.adminEliminarDeLista(nombreConcejal, v.cedula);
+    if (!resp.ok) {
+      btn.disabled = false;
+      window.Notificaciones.mostrarModal('No se pudo eliminar', esc(resp.datos?.error || 'No se pudo eliminar.'));
+      return;
+    }
+    await Promise.all([cargarListaConcejal(nombreConcejal), cargar()]);
+  });
+
+  await Promise.all([cargar(), cargarSelectorConcejales()]);
+  window.App.intervaloDeVista(cargar, 45000); // el dashboard admin lee un unico documento resumen, no hace falta mas seguido
 }
 
 /**
@@ -107,6 +222,7 @@ async function renderAdmin(root, perfil) {
  * el PDF individual del concejal, pero con una columna extra de Concejal.
  */
 function generarPDFListasConcejales(datos) {
+  const esc = window.escaparHTML;
   const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
 
   const filas = datos.lista
@@ -114,14 +230,16 @@ function generarPDFListasConcejales(datos) {
       (v, i) => `
     <tr class="${v.duplicado ? 'duplicado' : ''}">
       <td>${i + 1}</td>
-      <td>${v.opcionConcejal ?? '-'}</td>
-      <td>${v.nombreConcejal || ''}</td>
-      <td>${v.lista ?? '-'}</td>
-      <td>${v.cedula}</td>
-      <td>${v.nombresApellidos || ''}</td>
-      <td>${v.local || '-'}</td>
-      <td>${v.mesa ?? '-'}</td>
-      <td>${v.caudillo || '-'}</td>
+      <td>${esc(v.opcionConcejal ?? '-')}</td>
+      <td>${esc(v.nombreConcejal)}</td>
+      <td>${esc(v.lista ?? '-')}</td>
+      <td>${esc(v.cedula)}</td>
+      <td>${esc(v.nombresApellidos)}</td>
+      <td>${esc(v.local || '-')}</td>
+      <td>${esc(v.mesa ?? '-')}</td>
+      <td>${esc(v.caudillo || '-')}</td>
+      <td>${esc(v.telefono || '-')}</td>
+      <td>${esc(v.direccion || '-')}</td>
       <td>${v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente'}</td>
       <td>${v.duplicado ? '⚠ DUPLICADO' : ''}</td>
     </tr>`
@@ -161,7 +279,7 @@ function generarPDFListasConcejales(datos) {
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Opción</th><th>Concejal</th><th>Lista</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Estado</th><th>Duplicado</th>
+            <th>#</th><th>Opción</th><th>Concejal</th><th>Lista</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Teléfono</th><th>Dirección</th><th>Estado</th><th>Duplicado</th>
           </tr>
         </thead>
         <tbody>${filas}</tbody>
@@ -190,6 +308,7 @@ function generarPDFListasConcejales(datos) {
  * fila por cedula, con todos los concejales que la tienen listados juntos.
  */
 function generarPDFDuplicados(datos) {
+  const esc = window.escaparHTML;
   const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
 
   const filas = datos.duplicados
@@ -197,13 +316,13 @@ function generarPDFDuplicados(datos) {
       (d, i) => `
     <tr>
       <td>${i + 1}</td>
-      <td>${d.cedula}</td>
-      <td>${d.nombresApellidos || ''}</td>
-      <td>${d.local || '-'}</td>
-      <td>${d.mesa ?? '-'}</td>
-      <td>${d.estadoGestion === 'REGISTRADO' ? `Registrado (${d.origenRegistro || ''})` : 'Pendiente'}</td>
+      <td>${esc(d.cedula)}</td>
+      <td>${esc(d.nombresApellidos)}</td>
+      <td>${esc(d.local || '-')}</td>
+      <td>${esc(d.mesa ?? '-')}</td>
+      <td>${d.estadoGestion === 'REGISTRADO' ? `Registrado (${esc(d.origenRegistro || '')})` : 'Pendiente'}</td>
       <td>${d.cantidadConcejales}</td>
-      <td>${d.concejales.map((c) => `${c.nombreConcejal}${c.caudillo ? ` (caudillo: ${c.caudillo})` : ''}`).join('<br>')}</td>
+      <td>${d.concejales.map((c) => `${esc(c.nombreConcejal)}${c.caudillo ? ` (caudillo: ${esc(c.caudillo)})` : ''}`).join('<br>')}</td>
     </tr>`
     )
     .join('');

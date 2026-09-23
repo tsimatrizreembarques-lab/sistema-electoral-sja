@@ -208,3 +208,45 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
 .aviso-modal-caja > button { width: 100%; }
 .aviso-modal-botones { display: flex; gap: 8px; }
 .aviso-modal-botones button { flex: 1; width: auto; }
+
+input[type="tel"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--gris-claro);
+  margin-top: 4px;
+}
+.formulario-modal label { text-align: left; }
+.formulario-modal input { margin-bottom: 4px; }
+
+.contacto { display: block; margin-top: 4px; }
+.btn-whatsapp {
+  display: inline-block;
+  background: #25d366;
+  color: white;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+.btn-editar {
+  background: white;
+  color: var(--gris-oscuro);
+  border: 1.5px solid var(--gris);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.etiqueta-duplicado { color: #92400e; font-weight: 700; font-size: 0.8rem; }
+select.selector {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gris-claro);
+  margin-bottom: 12px;
+  font-size: 1rem;
+}

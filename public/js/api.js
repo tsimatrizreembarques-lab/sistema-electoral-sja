@@ -4,7 +4,14 @@ const Api = {
     const headers = { 'Content-Type': 'application/json', ...(opciones.headers || {}) };
     if (sesion?.token) headers.Authorization = `Bearer ${sesion.token}`;
 
-    const respuesta = await fetch(path, { ...opciones, headers });
+    let respuesta;
+    try {
+      respuesta = await fetch(path, { ...opciones, headers });
+    } catch (error) {
+      // Sin señal: fetch rechaza. Se devuelve como error normal para que las
+      // vistas muestren su mensaje en vez de quedar colgadas con una excepcion.
+      return { status: 0, ok: false, datos: { error: 'Sin conexión. Intentá de nuevo cuando haya señal.' } };
+    }
     const datos = await respuesta.json().catch(() => ({}));
     return { status: respuesta.status, ok: respuesta.ok, datos };
   },
@@ -62,15 +69,35 @@ const Api = {
     return this._fetch(`/api/concejal/buscar/${encodeURIComponent(cedula)}`);
   },
 
-  concejalAgregar(cedula, caudillo) {
+  concejalAgregar(cedula, { caudillo, telefono, direccion } = {}) {
     return this._fetch('/api/concejal/agregar', {
       method: 'POST',
-      body: JSON.stringify({ cedula, caudillo }),
+      body: JSON.stringify({ cedula, caudillo, telefono, direccion }),
+    });
+  },
+
+  concejalEditarContacto(cedula, { telefono, direccion }) {
+    return this._fetch(`/api/concejal/contacto/${encodeURIComponent(cedula)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ telefono, direccion }),
     });
   },
 
   concejalEliminar(cedula) {
     return this._fetch(`/api/concejal/eliminar/${encodeURIComponent(cedula)}`, { method: 'DELETE' });
+  },
+
+  adminListarConcejales() {
+    return this._fetch('/api/dashboard/admin/concejales');
+  },
+
+  adminListaConcejal(nombreConcejal) {
+    return this._fetch(`/api/dashboard/admin/lista?concejal=${encodeURIComponent(nombreConcejal)}`);
+  },
+
+  adminEliminarDeLista(nombreConcejal, cedula) {
+    const qs = `concejal=${encodeURIComponent(nombreConcejal)}&cedula=${encodeURIComponent(cedula)}`;
+    return this._fetch(`/api/dashboard/admin/lista?${qs}`, { method: 'DELETE' });
   },
 };
 

@@ -90,3 +90,81 @@ async function avisar(titulo, cuerpo) {
 }
 
 window.Notificaciones = { pedirPermisoNotificaciones, avisar, mostrarModal, confirmarModal };
+
+/**
+ * Escapa texto para meterlo en innerHTML. Obligatorio para todo lo que
+ * escribe un usuario (caudillo, telefono, direccion): sin esto, un texto
+ * con etiquetas HTML se ejecutaria en el dispositivo de quien lo mira
+ * (incluido el admin al generar sus reportes).
+ */
+function escaparHTML(valor) {
+  return String(valor ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Link de WhatsApp para un telefono paraguayo. Acepta "0981 123 456",
+ * "981123456", "+595 981 123456", etc. Devuelve null si no hay numero.
+ */
+function enlaceWhatsApp(telefono) {
+  let digitos = String(telefono ?? '').replace(/\D/g, '');
+  if (!digitos) return null;
+  if (digitos.startsWith('595')) {
+    // ya tiene codigo de pais
+  } else if (digitos.startsWith('0')) {
+    digitos = `595${digitos.slice(1)}`;
+  } else if (digitos.length === 9) {
+    digitos = `595${digitos}`;
+  }
+  return `https://wa.me/${digitos}`;
+}
+
+/**
+ * Modal con campos de texto. campos: [{ id, etiqueta, valor, tipo, inputmode }]
+ * Devuelve una Promise con { id: valor } al guardar, o null si se cancela.
+ */
+function formularioModal(titulo, campos, textoConfirmar = 'Guardar') {
+  return new Promise((resolve) => {
+    const overlay = crearOverlay(`
+      <h3>${escaparHTML(titulo)}</h3>
+      <form id="aviso-modal-form" class="formulario-modal">
+        ${campos
+          .map(
+            (c) => `
+          <label>${escaparHTML(c.etiqueta)}
+            <input type="${c.tipo || 'text'}" name="${c.id}" value="${escaparHTML(c.valor)}"
+              ${c.inputmode ? `inputmode="${c.inputmode}"` : ''} placeholder="${escaparHTML(c.placeholder || '')}" />
+          </label>`
+          )
+          .join('')}
+        <div class="aviso-modal-botones">
+          <button type="button" class="btn-eliminar" id="aviso-modal-cancelar">Cancelar</button>
+          <button type="submit" class="btn-registrar">${escaparHTML(textoConfirmar)}</button>
+        </div>
+      </form>
+    `);
+
+    const cerrar = (valor) => {
+      overlay.remove();
+      resolve(valor);
+    };
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) cerrar(null);
+    });
+    document.getElementById('aviso-modal-cancelar').addEventListener('click', () => cerrar(null));
+    document.getElementById('aviso-modal-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const datos = {};
+      campos.forEach((c) => { datos[c.id] = e.target.elements[c.id].value.trim(); });
+      cerrar(datos);
+    });
+  });
+}
+
+window.Notificaciones.formularioModal = formularioModal;
+window.escaparHTML = escaparHTML;
+window.enlaceWhatsApp = enlaceWhatsApp;
