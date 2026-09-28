@@ -24,6 +24,19 @@ async function renderAdmin(root, perfil) {
       <h3>Por concejal</h3>
       <div id="por-concejal"></div>
 
+      <h3>Reporte por concejal</h3>
+      <div class="tarjeta">
+        <select id="select-rep-concejal" class="selector">
+          <option value="">Todos los concejales (comparativo)</option>
+        </select>
+        <div style="display:flex; gap:8px;">
+          <button type="button" id="btn-ver-rep-concejal" class="secundario" style="flex:1;">🔍 Ver</button>
+          <button type="button" id="btn-pdf-rep-concejal" class="secundario" style="flex:1;">📄 PDF</button>
+        </div>
+        <p id="resumen-rep-concejal" class="sub"></p>
+      </div>
+      <div id="rep-concejal-admin"></div>
+
       <h3>Preasignados por lugar y mesa</h3>
       <div class="tarjeta">
         <select id="select-pre-concejal" class="selector">
@@ -145,7 +158,85 @@ async function renderAdmin(root, perfil) {
     document.getElementById('select-lista-concejal').innerHTML = '<option value="">Elegí un concejal…</option>' + opciones;
     document.getElementById('select-duplicados-concejal').innerHTML = '<option value="">Duplicados: todos los concejales</option>' + opciones;
     document.getElementById('select-pre-concejal').innerHTML = '<option value="">Todos los concejales</option>' + opciones;
+    document.getElementById('select-rep-concejal').innerHTML = '<option value="">Todos los concejales (comparativo)</option>' + opciones;
   }
+
+  // --- Reporte por concejal: comparativo de todos, o la ficha de uno ---
+  const porcentaje = (parte, total) => (total ? `${Math.round((parte / total) * 100)}%` : '-');
+
+  async function cargarReporteConcejales() {
+    const btn = document.getElementById('btn-ver-rep-concejal');
+    const resumen = document.getElementById('resumen-rep-concejal');
+    const concejal = document.getElementById('select-rep-concejal').value;
+
+    btn.disabled = true;
+    resumen.textContent = 'Cargando…';
+    const { ok, datos } = await window.Api.adminReporteConcejales(concejal);
+    btn.disabled = false;
+    const cont = document.getElementById('rep-concejal-admin');
+    if (!cont) return null;
+    if (!ok) {
+      resumen.textContent = datos?.error || 'No se pudo cargar.';
+      return null;
+    }
+
+    const tot = datos.concejales.reduce(
+      (a, c) => ({ pre: a.pre + c.preasignados, reg: a.reg + c.registrados }), { pre: 0, reg: 0 }
+    );
+
+    if (!datos.concejal) {
+      resumen.textContent = `${datos.concejales.length} concejales · ${tot.pre} preasignados · ${tot.reg} registrados (${porcentaje(tot.reg, tot.pre)})`;
+      cont.innerHTML = datos.concejales
+        .map((c) => `
+        <div class="tarjeta">
+          <h4 style="margin:0 0 6px;">${c.opcion ? `Opción ${esc(c.opcion)} — ` : ''}${esc(c.nombreConcejal)}</h4>
+          <div class="tabla-simple">
+            <div class="fila"><span>Preasignados</span><strong>${c.preasignados}</strong></div>
+            <div class="fila"><span>Registrados</span><strong>${c.registrados} <span class="sub">(${porcentaje(c.registrados, c.preasignados)})</span></strong></div>
+            <div class="fila"><span>Pendientes</span><strong>${c.pendientes}</strong></div>
+            <div class="fila"><span>Duplicados con otras listas</span><strong>${c.duplicados}</strong></div>
+            <div class="fila"><span>Asignados en Comando</span><strong>${c.asignadosEnComando}</strong></div>
+          </div>
+          ${c.lugares.length
+            ? `<p class="sub" style="margin:10px 0 4px;">Por lugar de votación</p>
+               <div class="tabla-simple">${c.lugares
+                 .map((l) => `<div class="fila"><span>${esc(l.local)}</span><strong>${l.preasignados} <span class="sub">(${l.registrados} reg.)</span></strong></div>`)
+                 .join('')}</div>`
+            : '<p class="sub" style="margin-top:8px;">Todavía no cargó a nadie.</p>'}
+        </div>`)
+        .join('');
+      return datos;
+    }
+
+    const c = datos.concejales[0];
+    if (!c) {
+      resumen.textContent = 'Ese concejal no tiene datos.';
+      cont.innerHTML = '';
+      return datos;
+    }
+    resumen.textContent =
+      `${c.preasignados} preasignados · ${c.registrados} registrados (${porcentaje(c.registrados, c.preasignados)}) · ` +
+      `${c.pendientes} pendientes · ${c.duplicados} duplicados · ${c.asignadosEnComando} asignados en Comando`;
+    cont.innerHTML = c.lugares.length === 0
+      ? '<p class="sub">Todavía no cargó a nadie.</p>'
+      : c.lugares
+          .map((l) => `
+        <div class="tarjeta">
+          <h4 style="margin:0 0 8px;">${esc(l.local)} <span class="sub">— ${l.preasignados} preasignados · ${l.registrados} registrados</span></h4>
+          <div class="tabla-simple">${l.mesas
+            .map((m) => `<div class="fila"><span>Mesa ${esc(m.mesa ?? '-')}</span><strong>${m.preasignados} <span class="sub">(${m.registrados} reg.)</span></strong></div>`)
+            .join('')}</div>
+        </div>`)
+          .join('') + '<p class="sub">La lista completa de sus votantes sale en el PDF.</p>';
+    return datos;
+  }
+
+  document.getElementById('btn-ver-rep-concejal').addEventListener('click', cargarReporteConcejales);
+  document.getElementById('select-rep-concejal').addEventListener('change', cargarReporteConcejales);
+  document.getElementById('btn-pdf-rep-concejal').addEventListener('click', async () => {
+    const datos = await cargarReporteConcejales();
+    if (datos) generarPDFReporteConcejales(datos);
+  });
 
   // --- Preasignados por lugar de votacion y mesa ---
   async function cargarPreasignados() {
@@ -427,6 +518,91 @@ function generarPDFPreasignados(datos) {
     pie: 'Confidencial: uso exclusivo del administrador',
     nombreArchivo: `Preasignados ${datos.concejal || 'todos'}${datos.local ? ` ${datos.local}` : ''}`,
     secciones: secciones.length ? secciones : [{ columnas: ['Sin preasignados para este filtro'], filas: [] }],
+  });
+}
+
+/**
+ * PDF del reporte por concejal. Todos: tabla comparativa + cuanto tiene cada
+ * uno en cada lugar. Uno: su resumen, desglose por lugar/mesa y su lista.
+ */
+function generarPDFReporteConcejales(datos) {
+  const pct = (parte, total) => (total ? `${Math.round((parte / total) * 100)}%` : '-');
+  const pie = 'Confidencial: uso exclusivo del administrador';
+
+  if (!datos.concejal) {
+    const locales = [...new Set(datos.concejales.flatMap((c) => c.lugares.map((l) => l.local)))].sort();
+    const tot = datos.concejales.reduce(
+      (a, c) => ({ pre: a.pre + c.preasignados, reg: a.reg + c.registrados }), { pre: 0, reg: 0 }
+    );
+    return window.PDF.descargar({
+      titulo: 'Reporte por concejal',
+      subtitulo: 'Comparativo de todos los concejales',
+      resumen: [`Concejales: ${datos.concejales.length}`, `Preasignados: ${tot.pre}`, `Registrados: ${tot.reg} (${pct(tot.reg, tot.pre)})`],
+      horizontal: true,
+      pie,
+      nombreArchivo: 'Reporte por concejal',
+      secciones: [
+        {
+          titulo: 'Resumen',
+          columnas: ['Opción', 'Concejal', 'Lista', 'Preasignados', 'Registrados', '% avance', 'Pendientes', 'Duplicados', 'Asignados en Comando'],
+          filas: datos.concejales.map((c) => [
+            c.opcion, c.nombreConcejal, c.lista, c.preasignados, c.registrados, pct(c.registrados, c.preasignados),
+            c.pendientes, c.duplicados, c.asignadosEnComando,
+          ]),
+          alinearDerecha: [3, 4, 5, 6, 7, 8],
+        },
+        {
+          titulo: 'Preasignados por lugar de votación (registrados entre paréntesis)',
+          columnas: ['Concejal', ...locales, 'Total'],
+          filas: datos.concejales.map((c) => [
+            c.nombreConcejal,
+            ...locales.map((loc) => {
+              const l = c.lugares.find((x) => x.local === loc);
+              return l ? `${l.preasignados} (${l.registrados})` : '0';
+            }),
+            `${c.preasignados} (${c.registrados})`,
+          ]),
+          alinearDerecha: locales.map((_, i) => i + 1).concat(locales.length + 1),
+        },
+      ],
+    });
+  }
+
+  const c = datos.concejales[0] || { nombreConcejal: datos.concejal, preasignados: 0, registrados: 0, pendientes: 0, duplicados: 0, asignadosEnComando: 0, lugares: [] };
+  const secciones = [{
+    titulo: 'Por lugar de votación y mesa',
+    columnas: ['Lugar de votación', 'Mesa', 'Preasignados', 'Registrados', 'Pendientes'],
+    filas: c.lugares.flatMap((l) =>
+      l.mesas.map((m) => [l.local, m.mesa, m.preasignados, m.registrados, m.preasignados - m.registrados])
+    ),
+    alinearDerecha: [1, 2, 3, 4],
+  }];
+  if (datos.votantes?.length) {
+    secciones.push({
+      titulo: 'Lista de votantes',
+      columnas: ['#', 'Cédula', 'Nombre', 'Lugar', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado', 'Duplicado'],
+      filas: datos.votantes.map((v, i) => [
+        i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.direccion,
+        v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente', v.duplicado ? 'SÍ' : '',
+      ]),
+      resaltar: (i) => datos.votantes[i].duplicado,
+    });
+  }
+
+  return window.PDF.descargar({
+    titulo: `Reporte de ${c.nombreConcejal}`,
+    subtitulo: [c.opcion ? `Opción ${c.opcion}` : '', c.lista ? `Lista ${c.lista}` : ''].filter(Boolean).join(' · '),
+    resumen: [
+      `Preasignados: ${c.preasignados}`,
+      `Registrados: ${c.registrados} (${pct(c.registrados, c.preasignados)})`,
+      `Pendientes: ${c.pendientes}`,
+      `Duplicados: ${c.duplicados}`,
+      `Asignados en Comando: ${c.asignadosEnComando}`,
+    ],
+    horizontal: true,
+    pie,
+    nombreArchivo: `Reporte ${c.nombreConcejal}`,
+    secciones,
   });
 }
 

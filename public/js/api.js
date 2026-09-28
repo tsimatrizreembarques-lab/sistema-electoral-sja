@@ -76,6 +76,11 @@ const Api = {
     return this._fetch(`/api/dashboard/admin/duplicados${qs}`);
   },
 
+  adminReporteConcejales(concejal) {
+    const qs = concejal ? `?concejal=${encodeURIComponent(concejal)}` : '';
+    return this._fetch(`/api/dashboard/admin/reporte-concejales${qs}`);
+  },
+
   adminPreasignados({ concejal, local } = {}) {
     const params = new URLSearchParams();
     if (concejal) params.set('concejal', concejal);

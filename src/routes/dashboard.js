@@ -315,6 +315,131 @@ router.get('/admin/preasignados', requiereRol('admin'), async (req, res) => {
 });
 
 /**
+ * GET /api/dashboard/admin/reporte-concejales?concejal=NOMBRE
+ * Reporte por concejal. Sin filtro: una fila por concejal (preasignados,
+ * registrados, pendientes, duplicados, asignados en Comando) con su desglose
+ * por lugar de votacion. Con ?concejal=: la ficha de ese concejal, con
+ * desglose por lugar y mesa y la lista completa de sus votantes.
+ */
+router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) => {
+  try {
+    const db = getFirestore();
+    const filtroConcejal = String(req.query.concejal || '').trim() || null;
+
+    // Se lee la coleccion completa (no solo la del concejal) para poder
+    // marcar duplicados contra las listas de los demas.
+    const [vcSnap, registrosSnap, concejalesSnap, statsSnap] = await Promise.all([
+      db.collection('votantesConcejal').get(),
+      db.collection('registros').select('cedula', 'estadoGestion').get(),
+      db.collection('concejales').get(),
+      statsRef(db).get(),
+    ]);
+
+    const todos = vcSnap.docs.map((d) => d.data());
+    const listasPorCedula = {};
+    todos.forEach((v) => { listasPorCedula[v.cedula] = (listasPorCedula[v.cedula] || 0) + 1; });
+
+    const registrados = new Set();
+    registrosSnap.forEach((d) => {
+      if (d.data().estadoGestion === 'REGISTRADO') registrados.add(d.id);
+    });
+    const asignadosEnComando = (statsSnap.exists && statsSnap.data().porConcejal) || {};
+
+    const votantes = filtroConcejal ? todos.filter((v) => v.nombreConcejal === filtroConcejal) : todos;
+
+    // Ubicacion: las altas nuevas la traen; las importadas se completan del padron.
+    const sinUbicacion = [...new Set(votantes.filter((v) => !v.local).map((v) => v.cedula))];
+    const padronPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < sinUbicacion.length; i += LOTE) {
+      const snap = await db.collection('padron').where('cedula', 'in', sinUbicacion.slice(i, i + LOTE)).get();
+      snap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+    }
+
+    // Base: todos los concejales cargados, aunque todavia tengan la lista vacia.
+    const porConcejal = {};
+    const nuevoConcejal = (nombre, datos = {}) => ({
+      nombreConcejal: nombre,
+      opcion: datos.opcion ?? null,
+      lista: datos.lista ?? null,
+      preasignados: 0,
+      registrados: 0,
+      duplicados: 0,
+      asignadosEnComando: asignadosEnComando[nombre] || 0,
+      lugares: {},
+    });
+    concejalesSnap.forEach((d) => {
+      if (!filtroConcejal || d.id === filtroConcejal) porConcejal[d.id] = nuevoConcejal(d.id, d.data());
+    });
+
+    const detalle = [];
+    for (const v of votantes) {
+      const n = v.nombreConcejal || '(sin concejal)';
+      if (!porConcejal[n]) porConcejal[n] = nuevoConcejal(n);
+      const c = porConcejal[n];
+      const local = v.local || padronPorCedula[v.cedula]?.local || 'SIN LUGAR (no está en el padrón)';
+      const mesa = v.mesa ?? padronPorCedula[v.cedula]?.mesa ?? null;
+      const registrado = registrados.has(v.cedula);
+      const duplicado = (listasPorCedula[v.cedula] || 0) > 1;
+
+      c.preasignados += 1;
+      if (registrado) c.registrados += 1;
+      if (duplicado) c.duplicados += 1;
+
+      if (!c.lugares[local]) c.lugares[local] = { local, preasignados: 0, registrados: 0, mesas: {} };
+      const l = c.lugares[local];
+      l.preasignados += 1;
+      if (registrado) l.registrados += 1;
+      const claveMesa = mesa ?? '-';
+      if (!l.mesas[claveMesa]) l.mesas[claveMesa] = { mesa, preasignados: 0, registrados: 0 };
+      l.mesas[claveMesa].preasignados += 1;
+      if (registrado) l.mesas[claveMesa].registrados += 1;
+
+      if (filtroConcejal) {
+        detalle.push({
+          cedula: v.cedula,
+          nombresApellidos: v.nombresApellidos || padronPorCedula[v.cedula]?.nombresApellidos || '',
+          local,
+          mesa,
+          caudillo: v.caudillo || null,
+          telefono: v.telefono || null,
+          direccion: v.direccion || null,
+          estadoGestion: registrado ? 'REGISTRADO' : 'PENDIENTE',
+          duplicado,
+        });
+      }
+    }
+
+    const concejales = Object.values(porConcejal)
+      .map((c) => ({
+        ...c,
+        pendientes: c.preasignados - c.registrados,
+        lugares: Object.values(c.lugares)
+          .map((l) => ({
+            ...l,
+            mesas: Object.values(l.mesas).sort((a, b) => (Number(a.mesa) || 9999) - (Number(b.mesa) || 9999)),
+          }))
+          .sort((a, b) => a.local.localeCompare(b.local)),
+      }))
+      .sort((a, b) => (a.opcion ?? 999) - (b.opcion ?? 999) || a.nombreConcejal.localeCompare(b.nombreConcejal));
+
+    detalle.sort((a, b) =>
+      a.local.localeCompare(b.local) || (Number(a.mesa) || 9999) - (Number(b.mesa) || 9999) || a.nombresApellidos.localeCompare(b.nombresApellidos)
+    );
+
+    res.json({
+      generadoEn: new Date().toISOString(),
+      concejal: filtroConcejal,
+      concejales,
+      votantes: filtroConcejal ? detalle : undefined,
+    });
+  } catch (error) {
+    console.error('Error al generar reporte por concejal:', error);
+    res.status(500).json({ error: 'Error interno al generar el reporte.' });
+  }
+});
+
+/**
  * GET /api/dashboard/admin/concejales
  * Concejales disponibles (para el selector del admin), ordenados por opcion.
  */
