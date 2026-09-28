@@ -159,7 +159,11 @@ function formularioModal(titulo, campos, textoConfirmar = 'Guardar') {
     document.getElementById('aviso-modal-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const datos = {};
-      campos.forEach((c) => { datos[c.id] = e.target.elements[c.id].value.trim(); });
+      // Las contraseñas van tal cual (el login no recorta espacios).
+      campos.forEach((c) => {
+        const valor = e.target.elements[c.id].value;
+        datos[c.id] = c.tipo === 'password' ? valor : valor.trim();
+      });
       cerrar(datos);
     });
   });

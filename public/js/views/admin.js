@@ -26,6 +26,9 @@ async function renderAdmin(root, perfil) {
         </select>
         <input id="filtro-lista" type="text" placeholder="Filtrar por nombre o cédula" class="oculto" />
         <p id="resumen-lista" class="sub"></p>
+        <button type="button" id="btn-resetear-password" class="btn-editar oculto" style="width:100%;">
+          🔑 Resetear contraseña de este concejal
+        </button>
       </div>
       <div id="lista-concejal-admin"></div>
     </main>
@@ -180,7 +183,35 @@ async function renderAdmin(root, perfil) {
 
   document.getElementById('select-lista-concejal').addEventListener('change', (e) => {
     document.getElementById('filtro-lista').value = '';
+    document.getElementById('btn-resetear-password').classList.toggle('oculto', !e.target.value);
     cargarListaConcejal(e.target.value);
+  });
+
+  // El admin le asigna al concejal una contraseña nueva generada al azar
+  // (ej. si se la olvido) y se la muestra una sola vez para que se la pase.
+  document.getElementById('btn-resetear-password').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; // despues de un await, e.currentTarget ya es null
+    const nombreConcejal = document.getElementById('select-lista-concejal').value;
+    if (!nombreConcejal) return;
+    const confirmado = await window.Notificaciones.confirmarModal(
+      'Resetear contraseña',
+      `¿Asignarle una contraseña nueva a ${esc(nombreConcejal)}?\n\nLa actual deja de funcionar en cuanto confirmes.`,
+      'Resetear'
+    );
+    if (!confirmado) return;
+
+    btn.disabled = true;
+    const resp = await window.Api.adminResetearPassword(nombreConcejal);
+    btn.disabled = false;
+    if (!resp.ok) {
+      window.Notificaciones.mostrarModal('No se pudo resetear', esc(resp.datos?.error || 'No se pudo resetear la contraseña.'));
+      return;
+    }
+    window.Notificaciones.mostrarModal(
+      'Contraseña nueva',
+      `Usuario: <strong>${esc(resp.datos.usuario)}</strong>\nContraseña: <strong style="font-size:1.3rem; letter-spacing:1px;">${esc(resp.datos.password)}</strong>\n\n` +
+        'Anotala y pasásela al concejal: no se vuelve a mostrar. Después la puede cambiar desde su botón 🔑.'
+    );
   });
   document.getElementById('filtro-lista').addEventListener('input', pintarListaConcejal);
 

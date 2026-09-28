@@ -7,7 +7,10 @@ async function renderConcejal(root, perfil) {
         <strong>${esc(perfil.nombreConcejal)}</strong>
         <span class="sub">Mi lista</span>
       </div>
-      <button id="btn-salir" class="link">Salir</button>
+      <div class="acciones-header">
+        <button id="btn-cambiar-password" class="link">🔑 Contraseña</button>
+        <button id="btn-salir" class="link">Salir</button>
+      </div>
     </header>
     <main class="contenido">
       <div id="resumen" class="tarjeta"></div>
@@ -36,6 +39,27 @@ async function renderConcejal(root, perfil) {
   `;
 
   document.getElementById('btn-salir').addEventListener('click', () => window.App.salir());
+  document.getElementById('btn-cambiar-password').addEventListener('click', cambiarPassword);
+
+  async function cambiarPassword() {
+    const valores = await window.Notificaciones.formularioModal('Cambiar contraseña', [
+      { id: 'actual', etiqueta: 'Contraseña actual', tipo: 'password' },
+      { id: 'nueva', etiqueta: 'Contraseña nueva', tipo: 'password', placeholder: 'Mínimo 6 caracteres' },
+      { id: 'repetir', etiqueta: 'Repetir contraseña nueva', tipo: 'password' },
+    ], 'Cambiar');
+    if (!valores) return;
+
+    if (valores.nueva !== valores.repetir) {
+      window.Notificaciones.mostrarModal('No coinciden', 'La contraseña nueva y su repetición no son iguales. Probá de nuevo.');
+      return;
+    }
+    const resp = await window.Api.cambiarPassword(valores.actual, valores.nueva);
+    if (!resp.ok) {
+      window.Notificaciones.mostrarModal('No se pudo cambiar', esc(resp.datos?.error || 'No se pudo cambiar la contraseña.'));
+      return;
+    }
+    window.Notificaciones.mostrarModal('Contraseña cambiada', 'Desde ahora entrá con tu contraseña nueva.');
+  }
 
   document.getElementById('btn-ver-por-mesa').addEventListener('click', () => {
     const panel = document.getElementById('por-mesa');

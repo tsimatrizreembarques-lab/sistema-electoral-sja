@@ -23,6 +23,20 @@ const Api = {
     });
   },
 
+  cambiarPassword(actual, nueva) {
+    return this._fetch('/api/auth/cambiar-password', {
+      method: 'POST',
+      body: JSON.stringify({ actual, nueva }),
+    });
+  },
+
+  adminResetearPassword(nombreConcejal) {
+    return this._fetch('/api/auth/resetear-password', {
+      method: 'POST',
+      body: JSON.stringify({ nombreConcejal }),
+    });
+  },
+
   descargarPaqueteLocal() {
     return this._fetch('/api/votantes/paquete-local/descargar');
   },
