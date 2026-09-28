@@ -338,255 +338,96 @@ async function renderAdmin(root, perfil) {
 }
 
 /**
- * Abre una pestaña con el listado completo de TODAS las listas de TODOS los
- * concejales, en formato imprimible, y dispara el dialogo de impresion del
- * navegador (desde ahi se puede elegir "Guardar como PDF"). Mismo patron que
- * el PDF individual del concejal, pero con una columna extra de Concejal.
+ * PDF con TODAS las listas de TODOS los concejales (una fila por persona y
+ * concejal). Las filas de cedulas duplicadas entre listas van resaltadas.
  */
 function generarPDFListasConcejales(datos) {
-  const esc = window.escaparHTML;
-  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
-
-  const filas = datos.lista
-    .map(
-      (v, i) => `
-    <tr class="${v.duplicado ? 'duplicado' : ''}">
-      <td>${i + 1}</td>
-      <td>${esc(v.opcionConcejal ?? '-')}</td>
-      <td>${esc(v.nombreConcejal)}</td>
-      <td>${esc(v.lista ?? '-')}</td>
-      <td>${esc(v.cedula)}</td>
-      <td>${esc(v.nombresApellidos)}</td>
-      <td>${esc(v.local || '-')}</td>
-      <td>${esc(v.mesa ?? '-')}</td>
-      <td>${esc(v.caudillo || '-')}</td>
-      <td>${esc(v.telefono || '-')}</td>
-      <td>${esc(v.direccion || '-')}</td>
-      <td>${v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente'}</td>
-      <td>${v.duplicado ? '⚠ DUPLICADO' : ''}</td>
-    </tr>`
-    )
-    .join('');
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8" />
-      <title>Listas de concejales - Control Electoral SJA</title>
-      <style>
-        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
-        h1 { font-size: 1.3rem; margin-bottom: 4px; }
-        .sub { color: #555; font-size: 0.85rem; margin-bottom: 16px; }
-        .resumen { display: flex; gap: 24px; margin-bottom: 16px; font-size: 0.9rem; }
-        .resumen strong { display: block; font-size: 1.2rem; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
-        th, td { border: 1px solid #ccc; padding: 5px 7px; text-align: left; }
-        th { background: #f1f1f1; }
-        tr.duplicado { background: #fef9c3; }
-        tr.duplicado td:last-child { color: #92400e; font-weight: 700; }
-        @media print {
-          body { padding: 0; }
-          button { display: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Listas de concejales — Control Electoral SJA</h1>
-      <p class="sub">Generado el ${generadoEl}</p>
-      <div class="resumen">
-        <span>Total de votantes preasignados <strong>${datos.total}</strong></span>
-        <span>Cédulas duplicadas entre listas <strong>${datos.duplicados}</strong></span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th><th>Opción</th><th>Concejal</th><th>Lista</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Teléfono</th><th>Dirección</th><th>Estado</th><th>Duplicado</th>
-          </tr>
-        </thead>
-        <tbody>${filas}</tbody>
-      </table>
-      <script>window.onload = () => window.print();</script>
-    </body>
-    </html>
-  `;
-
-  const ventana = window.open('', '_blank');
-  if (!ventana) {
-    window.Notificaciones.mostrarModal(
-      'Ventana bloqueada',
-      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
-    );
-    return;
-  }
-  ventana.document.open();
-  ventana.document.write(html);
-  ventana.document.close();
+  return window.PDF.descargar({
+    titulo: 'Listas de concejales',
+    resumen: [`Total preasignados: ${datos.total}`, `Cédulas duplicadas entre listas: ${datos.duplicados}`],
+    horizontal: true,
+    pie: 'Confidencial: uso exclusivo del administrador',
+    nombreArchivo: 'Listas de concejales',
+    secciones: [{
+      columnas: ['#', 'Opción', 'Concejal', 'Lista', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado', 'Duplicado'],
+      filas: datos.lista.map((v, i) => [
+        i + 1, v.opcionConcejal, v.nombreConcejal, v.lista, v.cedula, v.nombresApellidos, v.local, v.mesa,
+        v.caudillo, v.telefono, v.direccion,
+        v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente',
+        v.duplicado ? 'DUPLICADO' : '',
+      ]),
+      resaltar: (i) => datos.lista[i].duplicado,
+    }],
+  });
 }
 
 /**
- * Abre una pestaña con el reporte de cedulas que figuran en 2 o mas listas
- * de concejales — EXCLUSIVO del admin, los concejales nunca ven esto. Una
- * fila por cedula, con todos los concejales que la tienen listados juntos.
+ * PDF de cedulas que figuran en 2 o mas listas. Con un concejal elegido,
+ * trae solo las de su lista y muestra con quienes las comparte.
  */
 function generarPDFDuplicados(datos) {
-  const esc = window.escaparHTML;
-  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
+  const deUno = Boolean(datos.concejal);
+  const caudillo = (c) => (c.caudillo ? ` (caudillo: ${c.caudillo})` : '');
 
-  const filas = datos.duplicados
-    .map(
-      (d, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>${esc(d.cedula)}</td>
-      <td>${esc(d.nombresApellidos)}</td>
-      <td>${esc(d.local || '-')}</td>
-      <td>${esc(d.mesa ?? '-')}</td>
-      <td>${d.estadoGestion === 'REGISTRADO' ? `Registrado (${esc(d.origenRegistro || '')})` : 'Pendiente'}</td>
-      <td>${d.cantidadConcejales}</td>
-      <td>${d.concejales
-        .map((c) => {
-          const texto = `${esc(c.nombreConcejal)}${c.caudillo ? ` (caudillo: ${esc(c.caudillo)})` : ''}`;
-          // En el reporte de UN concejal, se resalta a ese y se ve con quienes comparte.
-          return datos.concejal && c.nombreConcejal === datos.concejal ? `<strong>${texto}</strong>` : texto;
-        })
-        .join('<br>')}</td>
-    </tr>`
-    )
-    .join('');
-
-  const titulo = datos.concejal ? `Duplicados de ${esc(datos.concejal)}` : 'Reporte de duplicados';
-  const descripcion = datos.concejal
-    ? `cédulas de la lista de <strong>${esc(datos.concejal)}</strong> figuran también en la lista de otro concejal.`
-    : 'cédulas figuran en 2 o más listas de concejales.';
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8" />
-      <title>${titulo} - Control Electoral SJA</title>
-      <style>
-        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
-        h1 { font-size: 1.3rem; margin-bottom: 4px; }
-        .sub { color: #555; font-size: 0.85rem; margin-bottom: 16px; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
-        th { background: #f1f1f1; }
-        tr:nth-child(even) { background: #fef9c3; }
-        @media print {
-          body { padding: 0; }
-          button { display: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <h1>${titulo} — Control Electoral SJA</h1>
-      <p class="sub">Generado el ${generadoEl} · Confidencial: uso exclusivo del administrador</p>
-      <p><strong>${datos.total}</strong> ${descripcion}</p>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Estado</th><th>Cant.</th><th>Concejales</th>
-          </tr>
-        </thead>
-        <tbody>${filas}</tbody>
-      </table>
-      <script>window.onload = () => window.print();</script>
-    </body>
-    </html>
-  `;
-
-  const ventana = window.open('', '_blank');
-  if (!ventana) {
-    window.Notificaciones.mostrarModal(
-      'Ventana bloqueada',
-      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
-    );
-    return;
-  }
-  ventana.document.open();
-  ventana.document.write(html);
-  ventana.document.close();
+  return window.PDF.descargar({
+    titulo: deUno ? `Duplicados de ${datos.concejal}` : 'Reporte de duplicados',
+    subtitulo: deUno
+      ? 'Cédulas de su lista que también figuran en la lista de otro concejal'
+      : 'Cédulas que figuran en 2 o más listas de concejales',
+    resumen: [`${datos.total} cédulas duplicadas`],
+    horizontal: true,
+    pie: 'Confidencial: uso exclusivo del administrador',
+    nombreArchivo: deUno ? `Duplicados ${datos.concejal}` : 'Duplicados',
+    secciones: [{
+      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Estado', 'Cant.', deUno ? 'Comparte con' : 'Concejales'],
+      filas: datos.duplicados.map((d, i) => [
+        i + 1, d.cedula, d.nombresApellidos, d.local, d.mesa,
+        d.estadoGestion === 'REGISTRADO' ? `Registrado (${d.origenRegistro || ''})` : 'Pendiente',
+        d.cantidadConcejales,
+        d.concejales
+          .filter((c) => !deUno || c.nombreConcejal !== datos.concejal)
+          .map((c) => `${c.nombreConcejal}${caudillo(c)}`)
+          .join('\n'),
+      ]),
+      alinearDerecha: [6],
+    }],
+  });
 }
 
 /**
  * PDF de preasignados por lugar de votacion y mesa, con los filtros que se
- * aplicaron en pantalla (concejal y/o lugar).
+ * aplicaron en pantalla (concejal y/o lugar). Una seccion por lugar.
  */
 function generarPDFPreasignados(datos) {
-  const esc = window.escaparHTML;
-  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
-
-  const filtros = [
-    `Concejal: <strong>${datos.concejal ? esc(datos.concejal) : 'Todos'}</strong>`,
-    `Lugar de votación: <strong>${datos.local ? esc(datos.local) : 'Todos'}</strong>`,
-  ].join(' · ');
-
-  const bloques = datos.lugares
-    .map((l) => {
-      const filasMesas = l.mesas
-        .map((m) => `<tr><td>Mesa ${esc(m.mesa ?? '-')}</td><td>${m.total}</td><td>${m.registrados}</td><td>${m.total - m.registrados}</td></tr>`)
-        .join('');
-      const tablaConcejales = l.concejales.length
-        ? `<table class="chica">
-            <thead><tr><th>Concejal</th><th>Preasignados</th><th>Registrados</th><th>Pendientes</th></tr></thead>
-            <tbody>${l.concejales
-              .map((c) => `<tr><td>${esc(c.nombreConcejal)}</td><td>${c.total}</td><td>${c.registrados}</td><td>${c.total - c.registrados}</td></tr>`)
-              .join('')}</tbody>
-          </table>`
-        : '';
-      return `
-        <h2>${esc(l.local)} <span class="sub">— ${l.total} preasignados · ${l.registrados} registrados</span></h2>
-        <table>
-          <thead><tr><th>Mesa</th><th>Preasignados</th><th>Registrados</th><th>Pendientes</th></tr></thead>
-          <tbody>${filasMesas}</tbody>
-        </table>
-        ${tablaConcejales}`;
-    })
-    .join('');
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8" />
-      <title>Preasignados por lugar y mesa - Control Electoral SJA</title>
-      <style>
-        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
-        h1 { font-size: 1.3rem; margin-bottom: 4px; }
-        h2 { font-size: 1rem; margin: 20px 0 6px; }
-        .sub { color: #555; font-size: 0.85rem; font-weight: 400; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 8px; }
-        table.chica { width: 70%; }
-        th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; }
-        td:not(:first-child), th:not(:first-child) { text-align: right; }
-        th { background: #f1f1f1; }
-        h2 { break-after: avoid; }
-        @media print { body { padding: 0; } }
-      </style>
-    </head>
-    <body>
-      <h1>Preasignados por lugar de votación y mesa — Control Electoral SJA</h1>
-      <p class="sub">Generado el ${generadoEl} · ${filtros}</p>
-      <p><strong>${datos.total}</strong> preasignados · <strong>${datos.totalRegistrados}</strong> ya registrados · <strong>${datos.total - datos.totalRegistrados}</strong> pendientes</p>
-      ${bloques || '<p>Sin preasignados para este filtro.</p>'}
-      <script>window.onload = () => window.print();</script>
-    </body>
-    </html>
-  `;
-
-  const ventana = window.open('', '_blank');
-  if (!ventana) {
-    window.Notificaciones.mostrarModal(
-      'Ventana bloqueada',
-      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
-    );
-    return;
+  const secciones = [];
+  for (const l of datos.lugares) {
+    secciones.push({
+      titulo: `${l.local} — ${l.total} preasignados · ${l.registrados} registrados`,
+      columnas: ['Mesa', 'Preasignados', 'Registrados', 'Pendientes'],
+      filas: l.mesas.map((m) => [`Mesa ${m.mesa ?? '-'}`, m.total, m.registrados, m.total - m.registrados]),
+      alinearDerecha: [1, 2, 3],
+    });
+    if (l.concejales.length) {
+      secciones.push({
+        columnas: ['Concejal', 'Preasignados', 'Registrados', 'Pendientes'],
+        filas: l.concejales.map((c) => [c.nombreConcejal, c.total, c.registrados, c.total - c.registrados]),
+        alinearDerecha: [1, 2, 3],
+      });
+    }
   }
-  ventana.document.open();
-  ventana.document.write(html);
-  ventana.document.close();
+
+  return window.PDF.descargar({
+    titulo: 'Preasignados por lugar de votación y mesa',
+    subtitulo: `Concejal: ${datos.concejal || 'Todos'} · Lugar de votación: ${datos.local || 'Todos'}`,
+    resumen: [
+      `Preasignados: ${datos.total}`,
+      `Registrados: ${datos.totalRegistrados}`,
+      `Pendientes: ${datos.total - datos.totalRegistrados}`,
+    ],
+    pie: 'Confidencial: uso exclusivo del administrador',
+    nombreArchivo: `Preasignados ${datos.concejal || 'todos'}${datos.local ? ` ${datos.local}` : ''}`,
+    secciones: secciones.length ? secciones : [{ columnas: ['Sin preasignados para este filtro'], filas: [] }],
+  });
 }
 
 window.renderAdmin = renderAdmin;

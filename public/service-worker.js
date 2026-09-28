@@ -1,4 +1,4 @@
-const CACHE_NAME = 'electoral-sja-v16';
+const CACHE_NAME = 'electoral-sja-v17';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -8,6 +8,10 @@ const APP_SHELL = [
   '/js/api.js',
   '/js/sync.js',
   '/js/notificaciones.js',
+  '/js/pdf.js',
+  // Generador de PDF: en cache desde la instalacion para que funcione sin señal.
+  '/vendor/jspdf.umd.min.js',
+  '/vendor/jspdf.plugin.autotable.min.js',
   '/js/views/login.js',
   '/js/views/comando.js',
   '/js/views/mesa.js',

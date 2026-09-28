@@ -22,5 +22,9 @@
     "googleapis": "^173.0.0",
     "jsonwebtoken": "^9.0.2",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8"
   }
 }

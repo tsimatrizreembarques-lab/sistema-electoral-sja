@@ -222,13 +222,10 @@ async function renderConcejal(root, perfil) {
 }
 
 /**
- * Abre una pestaña con la lista en formato imprimible y dispara el dialogo
- * de impresion del navegador (desde ahi se puede elegir "Guardar como PDF").
- * No usa ninguna libreria externa: es la forma mas simple y confiable de
- * generar un PDF que funcione tambien offline, sin depender del servidor.
+ * Descarga la lista del concejal como PDF, generado en el propio dispositivo
+ * (funciona tambien sin señal: los datos son los ultimos cargados en pantalla).
  */
 function generarPDFLista(datos, perfil) {
-  const esc = window.escaparHTML;
   const votantes = [...datos.votantes].sort((a, b) => {
     const localA = a.local || '', localB = b.local || '';
     if (localA !== localB) return localA.localeCompare(localB);
@@ -236,78 +233,23 @@ function generarPDFLista(datos, perfil) {
     return (a.nombresApellidos || '').localeCompare(b.nombresApellidos || '');
   });
 
-  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
-
-  const filas = votantes
-    .map(
-      (v, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>${esc(v.cedula)}</td>
-      <td>${esc(v.nombresApellidos)}</td>
-      <td>${esc(v.local || '-')}</td>
-      <td>${esc(v.mesa ?? '-')}</td>
-      <td>${esc(v.caudillo || '-')}</td>
-      <td>${esc(v.telefono || '-')}</td>
-      <td>${esc(v.direccion || '-')}</td>
-      <td>${v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente'}</td>
-    </tr>`
-    )
-    .join('');
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8" />
-      <title>Lista de votantes - ${esc(perfil.nombreConcejal)}</title>
-      <style>
-        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
-        h1 { font-size: 1.3rem; margin-bottom: 4px; }
-        .sub { color: #555; font-size: 0.85rem; margin-bottom: 16px; }
-        .resumen { display: flex; gap: 24px; margin-bottom: 16px; font-size: 0.9rem; }
-        .resumen strong { display: block; font-size: 1.2rem; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-        th { background: #f1f1f1; }
-        @media print {
-          body { padding: 0; }
-          button { display: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Lista de votantes — ${esc(perfil.nombreConcejal)}</h1>
-      <p class="sub">Generado el ${generadoEl}</p>
-      <div class="resumen">
-        <span>Total asignado <strong>${datos.totalAsignado}</strong></span>
-        <span>Registrados <strong>${datos.totalRegistrado}</strong></span>
-        <span>Pendientes <strong>${datos.totalPendiente}</strong></span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th><th>Cédula</th><th>Nombre</th><th>Local</th><th>Mesa</th><th>Caudillo</th><th>Teléfono</th><th>Dirección</th><th>Estado</th>
-          </tr>
-        </thead>
-        <tbody>${filas}</tbody>
-      </table>
-      <script>window.onload = () => window.print();</script>
-    </body>
-    </html>
-  `;
-
-  const ventana = window.open('', '_blank');
-  if (!ventana) {
-    window.Notificaciones.mostrarModal(
-      'Ventana bloqueada',
-      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
-    );
-    return;
-  }
-  ventana.document.open();
-  ventana.document.write(html);
-  ventana.document.close();
+  return window.PDF.descargar({
+    titulo: `Lista de votantes — ${perfil.nombreConcejal}`,
+    resumen: [
+      `Total asignado: ${datos.totalAsignado}`,
+      `Registrados: ${datos.totalRegistrado}`,
+      `Pendientes: ${datos.totalPendiente}`,
+    ],
+    horizontal: true,
+    nombreArchivo: `Lista ${perfil.nombreConcejal}`,
+    secciones: [{
+      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado'],
+      filas: votantes.map((v, i) => [
+        i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.direccion,
+        v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente',
+      ]),
+    }],
+  });
 }
 
 window.renderConcejal = renderConcejal;
