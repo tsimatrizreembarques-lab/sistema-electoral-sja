@@ -153,10 +153,13 @@ router.get('/admin/listas', requiereRol('admin'), async (req, res) => {
  * Reporte de cedulas que figuran en la lista de 2 o mas concejales, EXCLUSIVO
  * para el admin — los concejales nunca ven esta informacion (ni siquiera que
  * existe un duplicado), solo el admin la puede consultar para resolverlo.
+ * Con ?concejal=NOMBRE devuelve solo los duplicados donde ese concejal es uno
+ * de los involucrados (con quienes comparte cada cedula).
  */
 router.get('/admin/duplicados', requiereRol('admin'), async (req, res) => {
   try {
     const db = getFirestore();
+    const filtroConcejal = String(req.query.concejal || '').trim() || null;
 
     const votantesConcejalSnap = await db.collection('votantesConcejal').get();
     const porCedula = {};
@@ -166,7 +169,10 @@ router.get('/admin/duplicados', requiereRol('admin'), async (req, res) => {
       porCedula[v.cedula].push({ nombreConcejal: v.nombreConcejal, lista: v.lista ?? null, caudillo: v.caudillo || null });
     });
 
-    const entradasDuplicadas = Object.entries(porCedula).filter(([, concejales]) => concejales.length > 1);
+    const entradasDuplicadas = Object.entries(porCedula).filter(
+      ([, concejales]) =>
+        concejales.length > 1 && (!filtroConcejal || concejales.some((c) => c.nombreConcejal === filtroConcejal))
+    );
     const cedulas = entradasDuplicadas.map(([cedula]) => cedula);
 
     const padronPorCedula = {};
@@ -203,11 +209,107 @@ router.get('/admin/duplicados', requiereRol('admin'), async (req, res) => {
 
     res.json({
       generadoEn: new Date().toISOString(),
+      concejal: filtroConcejal,
       total: duplicados.length,
       duplicados,
     });
   } catch (error) {
     console.error('Error al generar reporte de duplicados:', error);
+    res.status(500).json({ error: 'Error interno al generar el reporte.' });
+  }
+});
+
+/**
+ * GET /api/dashboard/admin/preasignados?concejal=NOMBRE&local=LOCAL
+ * Cuantas personas cargaron los concejales en sus listas, agrupado por lugar
+ * de votacion y por mesa (y cuantas de ellas ya fueron registradas). Ambos
+ * filtros son opcionales. Sin filtro de concejal, cada lugar trae ademas el
+ * desglose por concejal.
+ */
+router.get('/admin/preasignados', requiereRol('admin'), async (req, res) => {
+  try {
+    const db = getFirestore();
+    const filtroConcejal = String(req.query.concejal || '').trim() || null;
+    const filtroLocal = String(req.query.local || '').trim() || null;
+
+    let query = db.collection('votantesConcejal');
+    if (filtroConcejal) query = query.where('nombreConcejal', '==', filtroConcejal);
+    const [vcSnap, registrosSnap] = await Promise.all([
+      query.get(),
+      db.collection('registros').select('cedula', 'estadoGestion').get(),
+    ]);
+
+    const votantes = vcSnap.docs.map((d) => d.data());
+
+    // Las altas nuevas ya traen local/mesa; las importadas por Excel no: esas
+    // se completan desde el padron, en lotes.
+    const sinUbicacion = [...new Set(votantes.filter((v) => !v.local).map((v) => v.cedula))];
+    const padronPorCedula = {};
+    const LOTE = 30;
+    for (let i = 0; i < sinUbicacion.length; i += LOTE) {
+      const snap = await db.collection('padron').where('cedula', 'in', sinUbicacion.slice(i, i + LOTE)).get();
+      snap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
+    }
+
+    const registrados = new Set();
+    registrosSnap.forEach((d) => {
+      if (d.data().estadoGestion === 'REGISTRADO') registrados.add(d.id);
+    });
+
+    const localesDisponibles = new Set();
+    const porLocal = {};
+    let total = 0;
+    let totalRegistrados = 0;
+
+    for (const v of votantes) {
+      const local = v.local || padronPorCedula[v.cedula]?.local || 'SIN LUGAR (no está en el padrón)';
+      const mesa = v.mesa ?? padronPorCedula[v.cedula]?.mesa ?? null;
+      localesDisponibles.add(local);
+      if (filtroLocal && local !== filtroLocal) continue;
+
+      const registrado = registrados.has(v.cedula);
+      total += 1;
+      if (registrado) totalRegistrados += 1;
+
+      if (!porLocal[local]) porLocal[local] = { total: 0, registrados: 0, mesas: {}, concejales: {} };
+      const loc = porLocal[local];
+      loc.total += 1;
+      if (registrado) loc.registrados += 1;
+
+      const claveMesa = mesa ?? '-';
+      if (!loc.mesas[claveMesa]) loc.mesas[claveMesa] = { mesa, total: 0, registrados: 0 };
+      loc.mesas[claveMesa].total += 1;
+      if (registrado) loc.mesas[claveMesa].registrados += 1;
+
+      if (!filtroConcejal) {
+        const n = v.nombreConcejal || '(sin concejal)';
+        if (!loc.concejales[n]) loc.concejales[n] = { nombreConcejal: n, total: 0, registrados: 0 };
+        loc.concejales[n].total += 1;
+        if (registrado) loc.concejales[n].registrados += 1;
+      }
+    }
+
+    const lugares = Object.entries(porLocal)
+      .map(([local, loc]) => ({
+        local,
+        total: loc.total,
+        registrados: loc.registrados,
+        mesas: Object.values(loc.mesas).sort((a, b) => (Number(a.mesa) || 9999) - (Number(b.mesa) || 9999)),
+        concejales: Object.values(loc.concejales).sort((a, b) => b.total - a.total || a.nombreConcejal.localeCompare(b.nombreConcejal)),
+      }))
+      .sort((a, b) => a.local.localeCompare(b.local));
+
+    res.json({
+      generadoEn: new Date().toISOString(),
+      concejal: filtroConcejal,
+      local: filtroLocal,
+      total,
+      totalRegistrados,
+      lugares,
+      localesDisponibles: [...localesDisponibles].sort(),
+    });
+  } catch (error) {
+    console.error('Error al generar reporte de preasignados:', error);
     res.status(500).json({ error: 'Error interno al generar el reporte.' });
   }
 });

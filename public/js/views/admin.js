@@ -11,13 +11,34 @@ async function renderAdmin(root, perfil) {
       <button type="button" id="btn-pdf-listas" class="secundario" style="width:100%; margin-bottom:8px;">
         📄 Generar PDF de listas de concejales
       </button>
-      <button type="button" id="btn-pdf-duplicados" class="secundario" style="width:100%; margin-bottom:16px;">
-        ⚠ Generar reporte de duplicados
-      </button>
+      <div style="display:flex; gap:8px; margin-bottom:16px;">
+        <select id="select-duplicados-concejal" class="selector" style="flex:1; margin:0;">
+          <option value="">Duplicados: todos los concejales</option>
+        </select>
+        <button type="button" id="btn-pdf-duplicados" class="secundario" style="flex-shrink:0;">
+          ⚠ Generar reporte
+        </button>
+      </div>
       <h3>Por escuela</h3>
       <div id="por-escuela"></div>
       <h3>Por concejal</h3>
       <div id="por-concejal"></div>
+
+      <h3>Preasignados por lugar y mesa</h3>
+      <div class="tarjeta">
+        <select id="select-pre-concejal" class="selector">
+          <option value="">Todos los concejales</option>
+        </select>
+        <select id="select-pre-local" class="selector">
+          <option value="">Todos los lugares de votación</option>
+        </select>
+        <div style="display:flex; gap:8px;">
+          <button type="button" id="btn-ver-preasignados" class="secundario" style="flex:1;">🔍 Ver</button>
+          <button type="button" id="btn-pdf-preasignados" class="secundario" style="flex:1;">📄 PDF</button>
+        </div>
+        <p id="resumen-preasignados" class="sub"></p>
+      </div>
+      <div id="preasignados-admin"></div>
 
       <h3>Gestionar listas de concejales</h3>
       <div class="tarjeta">
@@ -52,11 +73,12 @@ async function renderAdmin(root, perfil) {
 
   document.getElementById('btn-pdf-duplicados').addEventListener('click', async () => {
     const btn = document.getElementById('btn-pdf-duplicados');
+    const concejal = document.getElementById('select-duplicados-concejal').value;
     btn.disabled = true;
     btn.textContent = 'Generando...';
-    const { ok, datos } = await window.Api.dashboardAdminDuplicados();
+    const { ok, datos } = await window.Api.dashboardAdminDuplicados(concejal);
     btn.disabled = false;
-    btn.textContent = '⚠ Generar reporte de duplicados';
+    btn.textContent = '⚠ Generar reporte';
     if (!ok) {
       window.Notificaciones.mostrarModal('No se pudo generar', datos?.error || 'No se pudo generar el reporte.');
       return;
@@ -112,14 +134,83 @@ async function renderAdmin(root, perfil) {
   // quitar a cualquier persona (el concejal solo puede quitar pendientes). ---
   let listaActual = null;
 
+  // Los tres selectores de concejal del admin (gestion de listas, duplicados
+  // y preasignados) se llenan con la misma consulta.
   async function cargarSelectorConcejales() {
     const { ok, datos } = await window.Api.adminListarConcejales();
-    const select = document.getElementById('select-lista-concejal');
-    if (!ok || !select) return;
-    select.innerHTML = '<option value="">Elegí un concejal…</option>' + datos.concejales
+    if (!ok || !document.getElementById('select-lista-concejal')) return;
+    const opciones = datos.concejales
       .map((c) => `<option value="${esc(c.nombreConcejal)}">${c.opcion ? `Opción ${esc(c.opcion)} — ` : ''}${esc(c.nombreConcejal)}${c.lista ? ` (Lista ${esc(c.lista)})` : ''}</option>`)
       .join('');
+    document.getElementById('select-lista-concejal').innerHTML = '<option value="">Elegí un concejal…</option>' + opciones;
+    document.getElementById('select-duplicados-concejal').innerHTML = '<option value="">Duplicados: todos los concejales</option>' + opciones;
+    document.getElementById('select-pre-concejal').innerHTML = '<option value="">Todos los concejales</option>' + opciones;
   }
+
+  // --- Preasignados por lugar de votacion y mesa ---
+  async function cargarPreasignados() {
+    const btn = document.getElementById('btn-ver-preasignados');
+    const resumen = document.getElementById('resumen-preasignados');
+    const concejal = document.getElementById('select-pre-concejal').value;
+    const local = document.getElementById('select-pre-local').value;
+
+    btn.disabled = true;
+    resumen.textContent = 'Cargando…';
+    const { ok, datos } = await window.Api.adminPreasignados({ concejal, local });
+    btn.disabled = false;
+    if (!document.getElementById('preasignados-admin')) return;
+    if (!ok) {
+      resumen.textContent = datos?.error || 'No se pudo cargar.';
+      return null;
+    }
+
+    // El selector de lugar se arma con los lugares que existen para ese
+    // concejal, conservando la eleccion actual.
+    const selLocal = document.getElementById('select-pre-local');
+    selLocal.innerHTML = '<option value="">Todos los lugares de votación</option>' + datos.localesDisponibles
+      .map((l) => `<option value="${esc(l)}" ${l === local ? 'selected' : ''}>${esc(l)}</option>`)
+      .join('');
+
+    resumen.textContent =
+      `${datos.total} preasignados · ${datos.totalRegistrados} ya registrados · ${datos.total - datos.totalRegistrados} pendientes`;
+
+    document.getElementById('preasignados-admin').innerHTML = datos.lugares.length === 0
+      ? '<p class="sub">Sin preasignados para este filtro.</p>'
+      : datos.lugares
+          .map((l) => `
+        <div class="tarjeta">
+          <h4 style="margin:0 0 8px;">${esc(l.local)} <span class="sub">— ${l.total} preasignados · ${l.registrados} registrados</span></h4>
+          <div class="tabla-simple">
+            ${l.mesas
+              .map((m) => `<div class="fila"><span>Mesa ${esc(m.mesa ?? '-')}</span><strong>${m.total} <span class="sub">(${m.registrados} reg.)</span></strong></div>`)
+              .join('')}
+          </div>
+          ${l.concejales.length
+            ? `<p class="sub" style="margin:10px 0 4px;">Por concejal</p>
+               <div class="tabla-simple">
+                 ${l.concejales
+                   .map((c) => `<div class="fila"><span>${esc(c.nombreConcejal)}</span><strong>${c.total} <span class="sub">(${c.registrados} reg.)</span></strong></div>`)
+                   .join('')}
+               </div>`
+            : ''}
+        </div>`)
+          .join('');
+    return datos;
+  }
+
+  document.getElementById('btn-ver-preasignados').addEventListener('click', cargarPreasignados);
+  document.getElementById('select-pre-concejal').addEventListener('change', () => {
+    // Al cambiar de concejal, el lugar elegido puede no existir para el nuevo: se vuelve a "Todos".
+    document.getElementById('select-pre-local').value = '';
+    cargarPreasignados();
+  });
+  document.getElementById('select-pre-local').addEventListener('change', cargarPreasignados);
+
+  document.getElementById('btn-pdf-preasignados').addEventListener('click', async () => {
+    // Siempre con datos frescos y con los filtros que estan elegidos ahora.
+    const datos = await cargarPreasignados();
+    if (datos) generarPDFPreasignados(datos);
+  });
 
   async function cargarListaConcejal(nombreConcejal) {
     const cont = document.getElementById('lista-concejal-admin');
@@ -353,17 +444,28 @@ function generarPDFDuplicados(datos) {
       <td>${esc(d.mesa ?? '-')}</td>
       <td>${d.estadoGestion === 'REGISTRADO' ? `Registrado (${esc(d.origenRegistro || '')})` : 'Pendiente'}</td>
       <td>${d.cantidadConcejales}</td>
-      <td>${d.concejales.map((c) => `${esc(c.nombreConcejal)}${c.caudillo ? ` (caudillo: ${esc(c.caudillo)})` : ''}`).join('<br>')}</td>
+      <td>${d.concejales
+        .map((c) => {
+          const texto = `${esc(c.nombreConcejal)}${c.caudillo ? ` (caudillo: ${esc(c.caudillo)})` : ''}`;
+          // En el reporte de UN concejal, se resalta a ese y se ve con quienes comparte.
+          return datos.concejal && c.nombreConcejal === datos.concejal ? `<strong>${texto}</strong>` : texto;
+        })
+        .join('<br>')}</td>
     </tr>`
     )
     .join('');
+
+  const titulo = datos.concejal ? `Duplicados de ${esc(datos.concejal)}` : 'Reporte de duplicados';
+  const descripcion = datos.concejal
+    ? `cédulas de la lista de <strong>${esc(datos.concejal)}</strong> figuran también en la lista de otro concejal.`
+    : 'cédulas figuran en 2 o más listas de concejales.';
 
   const html = `
     <!DOCTYPE html>
     <html lang="es">
     <head>
       <meta charset="UTF-8" />
-      <title>Reporte de duplicados - Control Electoral SJA</title>
+      <title>${titulo} - Control Electoral SJA</title>
       <style>
         body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
         h1 { font-size: 1.3rem; margin-bottom: 4px; }
@@ -379,9 +481,9 @@ function generarPDFDuplicados(datos) {
       </style>
     </head>
     <body>
-      <h1>Reporte de duplicados — Control Electoral SJA</h1>
+      <h1>${titulo} — Control Electoral SJA</h1>
       <p class="sub">Generado el ${generadoEl} · Confidencial: uso exclusivo del administrador</p>
-      <p><strong>${datos.total}</strong> cédulas figuran en 2 o más listas de concejales.</p>
+      <p><strong>${datos.total}</strong> ${descripcion}</p>
       <table>
         <thead>
           <tr>
@@ -390,6 +492,85 @@ function generarPDFDuplicados(datos) {
         </thead>
         <tbody>${filas}</tbody>
       </table>
+      <script>window.onload = () => window.print();</script>
+    </body>
+    </html>
+  `;
+
+  const ventana = window.open('', '_blank');
+  if (!ventana) {
+    window.Notificaciones.mostrarModal(
+      'Ventana bloqueada',
+      'El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio e intentá de nuevo.'
+    );
+    return;
+  }
+  ventana.document.open();
+  ventana.document.write(html);
+  ventana.document.close();
+}
+
+/**
+ * PDF de preasignados por lugar de votacion y mesa, con los filtros que se
+ * aplicaron en pantalla (concejal y/o lugar).
+ */
+function generarPDFPreasignados(datos) {
+  const esc = window.escaparHTML;
+  const generadoEl = window.formatearFechaPY ? window.formatearFechaPY(new Date().toISOString()) : new Date().toLocaleString();
+
+  const filtros = [
+    `Concejal: <strong>${datos.concejal ? esc(datos.concejal) : 'Todos'}</strong>`,
+    `Lugar de votación: <strong>${datos.local ? esc(datos.local) : 'Todos'}</strong>`,
+  ].join(' · ');
+
+  const bloques = datos.lugares
+    .map((l) => {
+      const filasMesas = l.mesas
+        .map((m) => `<tr><td>Mesa ${esc(m.mesa ?? '-')}</td><td>${m.total}</td><td>${m.registrados}</td><td>${m.total - m.registrados}</td></tr>`)
+        .join('');
+      const tablaConcejales = l.concejales.length
+        ? `<table class="chica">
+            <thead><tr><th>Concejal</th><th>Preasignados</th><th>Registrados</th><th>Pendientes</th></tr></thead>
+            <tbody>${l.concejales
+              .map((c) => `<tr><td>${esc(c.nombreConcejal)}</td><td>${c.total}</td><td>${c.registrados}</td><td>${c.total - c.registrados}</td></tr>`)
+              .join('')}</tbody>
+          </table>`
+        : '';
+      return `
+        <h2>${esc(l.local)} <span class="sub">— ${l.total} preasignados · ${l.registrados} registrados</span></h2>
+        <table>
+          <thead><tr><th>Mesa</th><th>Preasignados</th><th>Registrados</th><th>Pendientes</th></tr></thead>
+          <tbody>${filasMesas}</tbody>
+        </table>
+        ${tablaConcejales}`;
+    })
+    .join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Preasignados por lugar y mesa - Control Electoral SJA</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+        h1 { font-size: 1.3rem; margin-bottom: 4px; }
+        h2 { font-size: 1rem; margin: 20px 0 6px; }
+        .sub { color: #555; font-size: 0.85rem; font-weight: 400; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 8px; }
+        table.chica { width: 70%; }
+        th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; }
+        td:not(:first-child), th:not(:first-child) { text-align: right; }
+        th { background: #f1f1f1; }
+        h2 { break-after: avoid; }
+        @media print { body { padding: 0; } }
+      </style>
+    </head>
+    <body>
+      <h1>Preasignados por lugar de votación y mesa — Control Electoral SJA</h1>
+      <p class="sub">Generado el ${generadoEl} · ${filtros}</p>
+      <p><strong>${datos.total}</strong> preasignados · <strong>${datos.totalRegistrados}</strong> ya registrados · <strong>${datos.total - datos.totalRegistrados}</strong> pendientes</p>
+      ${bloques || '<p>Sin preasignados para este filtro.</p>'}
       <script>window.onload = () => window.print();</script>
     </body>
     </html>

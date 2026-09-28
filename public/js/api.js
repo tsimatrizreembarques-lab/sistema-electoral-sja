@@ -71,8 +71,17 @@ const Api = {
     return this._fetch('/api/dashboard/admin/listas');
   },
 
-  dashboardAdminDuplicados() {
-    return this._fetch('/api/dashboard/admin/duplicados');
+  dashboardAdminDuplicados(concejal) {
+    const qs = concejal ? `?concejal=${encodeURIComponent(concejal)}` : '';
+    return this._fetch(`/api/dashboard/admin/duplicados${qs}`);
+  },
+
+  adminPreasignados({ concejal, local } = {}) {
+    const params = new URLSearchParams();
+    if (concejal) params.set('concejal', concejal);
+    if (local) params.set('local', local);
+    const qs = params.toString();
+    return this._fetch(`/api/dashboard/admin/preasignados${qs ? `?${qs}` : ''}`);
   },
 
   dashboardConcejal() {

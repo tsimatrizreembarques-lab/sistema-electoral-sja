@@ -100,6 +100,10 @@ router.post('/agregar', requiereRol('concejal'), async (req, res) => {
       telefono,
       direccion,
       nombresApellidos: padron.nombresApellidos,
+      // Copia del padron para los reportes por lugar/mesa del admin (evita
+      // tener que buscar cada cedula en el padron al generarlos).
+      local: padron.local ?? null,
+      mesa: padron.mesa ?? null,
     });
 
     if (!yaTeniaEsteConcejal && existentesSnap.size === 1) {
