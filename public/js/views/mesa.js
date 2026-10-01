@@ -75,13 +75,13 @@ async function renderMesa(root, perfil) {
 
     let votante = modoBusquedaMesa === 'orden'
       ? await window.DBLocal.buscarVotantePorOrden(valor)
-      : await window.DBLocal.buscarVotante(valor.replace(/\D/g, ''));
+      : await window.DBLocal.buscarVotante(window.normalizarCedula(valor));
 
     if (!votante && modoBusquedaMesa === 'cedula' && navigator.onLine) {
       // No esta en el paquete local: puede ser que se haya agregado al padron
       // DESPUES de que este dispositivo inicio sesion. Se busca en el servidor
       // antes de decir que no existe.
-      const { ok, datos } = await window.Api.buscarVotante(valor.replace(/\D/g, ''));
+      const { ok, datos } = await window.Api.buscarVotante(window.normalizarCedula(valor));
       if (ok && datos.local === perfil.local && datos.mesa === perfil.mesa) {
         await window.DBLocal.guardarVotanteDescubierto(datos);
         votante = await window.DBLocal.buscarVotante(datos.cedula);

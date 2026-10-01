@@ -53,7 +53,7 @@ async function renderComando(root, perfil) {
     const cedula = document.getElementById('cedula').value.trim();
     if (!cedula) return;
 
-    const cedulaLimpia = cedula.replace(/\D/g, '');
+    const cedulaLimpia = window.normalizarCedula(cedula);
 
     const concejales = await window.DBLocal.obtenerConcejales();
 

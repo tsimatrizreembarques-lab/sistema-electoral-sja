@@ -171,4 +171,12 @@ function formularioModal(titulo, campos, textoConfirmar = 'Guardar') {
 
 window.Notificaciones.formularioModal = formularioModal;
 window.escaparHTML = escaparHTML;
+// Misma regla que src/lib/normalizar.js: solo digitos, salvo una letra final
+// (cedulas con numero repetido, ej. "1129164B").
+window.normalizarCedula = (valor) => {
+  const texto = String(valor ?? '').trim();
+  const digitos = texto.replace(/\D/g, '');
+  const letra = texto.match(/\d[\s.-]*([A-Za-z])$/);
+  return digitos && letra ? digitos + letra[1].toUpperCase() : digitos;
+};
 window.enlaceWhatsApp = enlaceWhatsApp;
