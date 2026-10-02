@@ -278,6 +278,8 @@ async function renderAdmin(root, perfil) {
           <div class="tabla-simple">
             <div class="fila"><span>Preasignados</span><strong>${c.preasignados}</strong></div>
             <div class="fila"><span>Registrados</span><strong>${c.registrados} <span class="sub">(${porcentaje(c.registrados, c.preasignados)})</span></strong></div>
+            <div class="fila"><span>Votaron con otra lista</span><strong>${c.otraLista}</strong></div>
+            ${c.sinAsignar ? `<div class="fila"><span>Votaron sin concejal asignado</span><strong>${c.sinAsignar}</strong></div>` : ''}
             <div class="fila"><span>Pendientes</span><strong>${c.pendientes}</strong></div>
             <div class="fila"><span>Duplicados con otras listas</span><strong>${c.duplicados}</strong></div>
             <div class="fila"><span>Asignados en Comando</span><strong>${c.asignadosEnComando}</strong></div>
@@ -301,6 +303,7 @@ async function renderAdmin(root, perfil) {
     }
     resumen.textContent =
       `${c.preasignados} preasignados · ${c.registrados} registrados (${porcentaje(c.registrados, c.preasignados)}) · ` +
+      `${c.otraLista} votaron con otra lista${c.sinAsignar ? ` · ${c.sinAsignar} votaron sin asignar` : ''} · ` +
       `${c.pendientes} pendientes · ${c.duplicados} duplicados · ${c.asignadosEnComando} asignados en Comando`;
     cont.innerHTML = c.lugares.length === 0
       ? '<p class="sub">Todavía no cargó a nadie.</p>'
@@ -634,12 +637,12 @@ function generarPDFReporteConcejales(datos) {
       secciones: [
         {
           titulo: 'Resumen',
-          columnas: ['Opción', 'Concejal', 'Lista', 'Preasignados', 'Registrados', '% avance', 'Pendientes', 'Duplicados', 'Asignados en Comando'],
+          columnas: ['Opción', 'Concejal', 'Lista', 'Preasignados', 'Registrados', '% avance', 'Con otra lista', 'Sin asignar', 'Pendientes', 'Duplicados', 'Asignados en Comando'],
           filas: datos.concejales.map((c) => [
             c.opcion, c.nombreConcejal, c.lista, c.preasignados, c.registrados, pct(c.registrados, c.preasignados),
-            c.pendientes, c.duplicados, c.asignadosEnComando,
+            c.otraLista, c.sinAsignar, c.pendientes, c.duplicados, c.asignadosEnComando,
           ]),
-          alinearDerecha: [3, 4, 5, 6, 7, 8],
+          alinearDerecha: [3, 4, 5, 6, 7, 8, 9, 10],
         },
         {
           titulo: 'Preasignados por lugar de votación (registrados entre paréntesis)',
@@ -658,14 +661,14 @@ function generarPDFReporteConcejales(datos) {
     });
   }
 
-  const c = datos.concejales[0] || { nombreConcejal: datos.concejal, preasignados: 0, registrados: 0, pendientes: 0, duplicados: 0, asignadosEnComando: 0, lugares: [] };
+  const c = datos.concejales[0] || { nombreConcejal: datos.concejal, preasignados: 0, registrados: 0, otraLista: 0, sinAsignar: 0, pendientes: 0, duplicados: 0, asignadosEnComando: 0, lugares: [] };
   const secciones = [{
     titulo: 'Por lugar de votación y mesa',
-    columnas: ['Lugar de votación', 'Mesa', 'Preasignados', 'Registrados', 'Pendientes'],
+    columnas: ['Lugar de votación', 'Mesa', 'Preasignados', 'Registrados', 'Con otra lista / sin asignar', 'Pendientes'],
     filas: c.lugares.flatMap((l) =>
-      l.mesas.map((m) => [l.local, m.mesa, m.preasignados, m.registrados, m.preasignados - m.registrados])
+      l.mesas.map((m) => [l.local, m.mesa, m.preasignados, m.registrados, m.votaronConOtro || 0, m.preasignados - m.registrados - (m.votaronConOtro || 0)])
     ),
-    alinearDerecha: [1, 2, 3, 4],
+    alinearDerecha: [1, 2, 3, 4, 5],
   }];
   if (datos.votantes?.length) {
     secciones.push({
@@ -673,7 +676,7 @@ function generarPDFReporteConcejales(datos) {
       columnas: ['#', 'Cédula', 'Nombre', 'Lugar', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado', 'Duplicado'],
       filas: datos.votantes.map((v, i) => [
         i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.direccion,
-        v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente', v.duplicado ? 'SÍ' : '',
+        estadoReporteAdmin(v), v.duplicado ? 'SÍ' : '',
       ]),
       resaltar: (i) => datos.votantes[i].duplicado,
     });
@@ -685,6 +688,8 @@ function generarPDFReporteConcejales(datos) {
     resumen: [
       `Preasignados: ${c.preasignados}`,
       `Registrados: ${c.registrados} (${pct(c.registrados, c.preasignados)})`,
+      `Votaron con otra lista: ${c.otraLista}`,
+      ...(c.sinAsignar ? [`Votaron sin asignar: ${c.sinAsignar}`] : []),
       `Pendientes: ${c.pendientes}`,
       `Duplicados: ${c.duplicados}`,
       `Asignados en Comando: ${c.asignadosEnComando}`,
@@ -694,6 +699,14 @@ function generarPDFReporteConcejales(datos) {
     nombreArchivo: `Reporte ${c.nombreConcejal}`,
     secciones,
   });
+}
+
+/** Estado de un votante en el reporte del admin (aca si se dice con quien). */
+function estadoReporteAdmin(v) {
+  if (v.estadoGestion === 'REGISTRADO') return 'Registrado';
+  if (v.estadoGestion === 'OTRA_LISTA') return `Votó con ${v.votoCon}`;
+  if (v.estadoGestion === 'SIN_ASIGNAR') return 'Votó (sin asignar)';
+  return 'Pendiente';
 }
 
 window.renderAdmin = renderAdmin;

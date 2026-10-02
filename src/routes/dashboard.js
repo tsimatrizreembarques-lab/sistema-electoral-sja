@@ -330,7 +330,7 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
     // marcar duplicados contra las listas de los demas.
     const [vcSnap, registrosSnap, concejalesSnap, statsSnap] = await Promise.all([
       db.collection('votantesConcejal').get(),
-      db.collection('registros').select('cedula', 'estadoGestion').get(),
+      db.collection('registros').select('cedula', 'estadoGestion', 'concejalAsignado').get(),
       db.collection('concejales').get(),
       statsRef(db).get(),
     ]);
@@ -339,9 +339,12 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
     const listasPorCedula = {};
     todos.forEach((v) => { listasPorCedula[v.cedula] = (listasPorCedula[v.cedula] || 0) + 1; });
 
-    const registrados = new Set();
+    // cedula registrada -> concejal al que quedo asignada (null = sin concejal).
+    // "Registrado" para un concejal = voto Y quedo asignado a el; si quedo con
+    // otro (o sin nadie) cuenta aparte, igual que en la pantalla del concejal.
+    const asignadoPorCedula = new Map();
     registrosSnap.forEach((d) => {
-      if (d.data().estadoGestion === 'REGISTRADO') registrados.add(d.id);
+      if (d.data().estadoGestion === 'REGISTRADO') asignadoPorCedula.set(d.id, d.data().concejalAsignado || null);
     });
     const asignadosEnComando = (statsSnap.exists && statsSnap.data().porConcejal) || {};
 
@@ -364,6 +367,8 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
       lista: datos.lista ?? null,
       preasignados: 0,
       registrados: 0,
+      otraLista: 0,
+      sinAsignar: 0,
       duplicados: 0,
       asignadosEnComando: asignadosEnComando[nombre] || 0,
       lugares: {},
@@ -379,21 +384,29 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
       const c = porConcejal[n];
       const local = v.local || padronPorCedula[v.cedula]?.local || 'SIN LUGAR (no está en el padrón)';
       const mesa = v.mesa ?? padronPorCedula[v.cedula]?.mesa ?? null;
-      const registrado = registrados.has(v.cedula);
+      const voto = asignadoPorCedula.has(v.cedula);
+      const votoCon = voto ? asignadoPorCedula.get(v.cedula) : null;
+      const estadoGestion = !voto ? 'PENDIENTE' : votoCon === n ? 'REGISTRADO' : votoCon ? 'OTRA_LISTA' : 'SIN_ASIGNAR';
+      const registrado = estadoGestion === 'REGISTRADO';
+      const votoConOtro = voto && !registrado;
       const duplicado = (listasPorCedula[v.cedula] || 0) > 1;
 
       c.preasignados += 1;
       if (registrado) c.registrados += 1;
+      if (estadoGestion === 'OTRA_LISTA') c.otraLista += 1;
+      if (estadoGestion === 'SIN_ASIGNAR') c.sinAsignar += 1;
       if (duplicado) c.duplicados += 1;
 
-      if (!c.lugares[local]) c.lugares[local] = { local, preasignados: 0, registrados: 0, mesas: {} };
+      if (!c.lugares[local]) c.lugares[local] = { local, preasignados: 0, registrados: 0, votaronConOtro: 0, mesas: {} };
       const l = c.lugares[local];
       l.preasignados += 1;
       if (registrado) l.registrados += 1;
+      if (votoConOtro) l.votaronConOtro += 1;
       const claveMesa = mesa ?? '-';
-      if (!l.mesas[claveMesa]) l.mesas[claveMesa] = { mesa, preasignados: 0, registrados: 0 };
+      if (!l.mesas[claveMesa]) l.mesas[claveMesa] = { mesa, preasignados: 0, registrados: 0, votaronConOtro: 0 };
       l.mesas[claveMesa].preasignados += 1;
       if (registrado) l.mesas[claveMesa].registrados += 1;
+      if (votoConOtro) l.mesas[claveMesa].votaronConOtro += 1;
 
       if (filtroConcejal) {
         detalle.push({
@@ -404,7 +417,9 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
           caudillo: v.caudillo || null,
           telefono: v.telefono || null,
           direccion: v.direccion || null,
-          estadoGestion: registrado ? 'REGISTRADO' : 'PENDIENTE',
+          estadoGestion,
+          // Solo el admin ve esto: con quien quedo si voto con otra lista.
+          votoCon: estadoGestion === 'OTRA_LISTA' ? votoCon : null,
           duplicado,
         });
       }
@@ -413,7 +428,7 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
     const concejales = Object.values(porConcejal)
       .map((c) => ({
         ...c,
-        pendientes: c.preasignados - c.registrados,
+        pendientes: c.preasignados - c.registrados - c.otraLista - c.sinAsignar,
         lugares: Object.values(c.lugares)
           .map((l) => ({
             ...l,
