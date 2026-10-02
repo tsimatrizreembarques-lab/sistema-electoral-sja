@@ -191,6 +191,14 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo, concejales
       <optgroup label="En cuya lista figura">${deSusListas.map(opcionConcejal).join('')}</optgroup>
       <optgroup label="Otros concejales">${otros.map(opcionConcejal).join('')}</optgroup>
     `;
+  } else if (votante.preasignados.length === 1) {
+    // Una sola lista: queda su concejal (se puede cambiar a otro, pero no
+    // dejar sin concejal; el servidor igual lo asignaria al preasignado).
+    // Si su nombre no coincide con ninguno de la lista oficial, se agrega
+    // igual: si no, el navegador dejaria elegido al primer concejal.
+    const pre = votante.preasignados[0];
+    const figura = concejalesOrdenados.some((c) => c.nombreConcejal === pre.nombreConcejal);
+    opcionesSelect = (figura ? '' : opcionConcejal(pre)) + concejalesOrdenados.map(opcionConcejal).join('');
   } else {
     opcionesSelect = `<option value="">Sin concejal</option>${concejalesOrdenados.map(opcionConcejal).join('')}`;
   }

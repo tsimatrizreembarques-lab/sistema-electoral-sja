@@ -108,11 +108,13 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     .get();
   const preasignados = preasignadosSnap.docs.map((d) => d.data());
 
-  // Comando decide el concejal y se respeta lo que eligio, incluso "Sin
-  // concejal" (null). Nunca se completa con preasignados[0]: en un duplicado
-  // seria un concejal cualquiera (el primero por orden alfabetico).
-  let listaFinal = listaAsignada ?? null;
-  let concejalFinal = concejalAsignado ?? null;
+  // Comando decide el concejal. Si no manda ninguno y la cedula esta en UNA
+  // sola lista, va a ese concejal. En un duplicado nunca se completa solo
+  // (seria uno cualquiera: el primero por orden alfabetico); ahi Comando
+  // esta obligado a elegir.
+  const unicoPreasignado = preasignados.length === 1 ? preasignados[0] : null;
+  let listaFinal = concejalAsignado ? listaAsignada ?? null : unicoPreasignado?.lista ?? null;
+  let concejalFinal = concejalAsignado || unicoPreasignado?.nombreConcejal || null;
   let forzarFinal = Boolean(forzar);
 
   if (usuario.rol === 'mesa') {
@@ -144,9 +146,8 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
         concejalFinal = registroSnap.data().concejalAsignado ?? null;
         listaFinal = registroSnap.data().listaAsignada ?? null;
       } else {
-        const unico = preasignados.length === 1 ? preasignados[0] : null;
-        concejalFinal = unico?.nombreConcejal ?? null;
-        listaFinal = unico?.lista ?? null;
+        concejalFinal = unicoPreasignado?.nombreConcejal ?? null;
+        listaFinal = unicoPreasignado?.lista ?? null;
       }
     }
 
