@@ -167,17 +167,33 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo, concejales
   // Registrar: siempre se puede elegir (o corregir) el concejal asignado,
   // tenga o no una preasignacion — asi nunca queda un voto sin poder
   // asignarse a nadie, ni sin forma de corregirlo despues.
-  const concejalPreseleccionado = votante.duplicadoAmbiguo ? '' : votante.preasignados[0]?.nombreConcejal || '';
-  const opcionesSelect = (concejales || [])
+  //
+  // Duplicado (cedula en 2+ listas): el operador TIENE que elegir a quien
+  // apoya antes de registrar. No hay "Sin concejal" ni nada preseleccionado,
+  // y los concejales de esas listas aparecen primero.
+  const esDuplicado = votante.duplicadoAmbiguo;
+  const concejalPreseleccionado = esDuplicado ? '' : votante.preasignados[0]?.nombreConcejal || '';
+  const opcionConcejal = (c) =>
+    `<option value="${c.nombreConcejal}" data-lista="${c.lista ?? ''}" ${
+      c.nombreConcejal === concejalPreseleccionado ? 'selected' : ''
+    }>${c.opcion ? `Opción ${c.opcion} — ` : ''}${c.nombreConcejal} (Lista ${c.lista ?? '-'})</option>`;
+  const concejalesOrdenados = (concejales || [])
     .slice()
-    .sort((a, b) => (a.opcion ?? 999) - (b.opcion ?? 999) || (a.nombreConcejal || '').localeCompare(b.nombreConcejal || ''))
-    .map(
-      (c) =>
-        `<option value="${c.nombreConcejal}" data-lista="${c.lista ?? ''}" ${
-          c.nombreConcejal === concejalPreseleccionado ? 'selected' : ''
-        }>${c.opcion ? `Opción ${c.opcion} — ` : ''}${c.nombreConcejal} (Lista ${c.lista ?? '-'})</option>`
-    )
-    .join('');
+    .sort((a, b) => (a.opcion ?? 999) - (b.opcion ?? 999) || (a.nombreConcejal || '').localeCompare(b.nombreConcejal || ''));
+
+  let opcionesSelect;
+  if (esDuplicado) {
+    const enSusListas = new Set(votante.preasignados.map((p) => p.nombreConcejal));
+    const deSusListas = concejalesOrdenados.filter((c) => enSusListas.has(c.nombreConcejal));
+    const otros = concejalesOrdenados.filter((c) => !enSusListas.has(c.nombreConcejal));
+    opcionesSelect = `
+      <option value="" selected disabled>— Elegí a quién apoya —</option>
+      <optgroup label="En cuya lista figura">${deSusListas.map(opcionConcejal).join('')}</optgroup>
+      <optgroup label="Otros concejales">${otros.map(opcionConcejal).join('')}</optgroup>
+    `;
+  } else {
+    opcionesSelect = `<option value="">Sin concejal</option>${concejalesOrdenados.map(opcionConcejal).join('')}`;
+  }
 
   cont.innerHTML = `
     <div class="tarjeta">
@@ -187,18 +203,26 @@ function renderResultadoComando(votante, cedulaBuscada, perfil, modo, concejales
       ${infoConcejal}
       <label class="sub" style="display:block; margin: 8px 0 4px;">Concejal asignado</label>
       <select id="select-concejal" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--gris-claro); margin-bottom:12px;">
-        <option value="">Sin concejal</option>
         ${opcionesSelect}
       </select>
-      <button id="btn-registrar" class="primario">Registrar paso por comando</button>
+      <button id="btn-registrar" class="primario" ${esDuplicado ? 'disabled' : ''}>Registrar paso por comando</button>
+      ${esDuplicado ? '<p id="aviso-elegir" class="sub">Elegí el concejal para poder registrar.</p>' : ''}
     </div>
   `;
 
+  const select = document.getElementById('select-concejal');
+  if (esDuplicado) {
+    select.addEventListener('change', () => {
+      document.getElementById('btn-registrar').disabled = !select.value;
+      document.getElementById('aviso-elegir')?.remove();
+    });
+  }
+
   document.getElementById('btn-registrar').addEventListener('click', async (e) => {
+    if (esDuplicado && !select.value) return;
     // Evita el doble toque: el segundo llegaba al servidor como "intento
     // bloqueado" del mismo puesto y ensuciaba el historial del votante.
     e.currentTarget.disabled = true;
-    const select = document.getElementById('select-concejal');
     const concejalAsignado = select.value || null;
     const listaAsignada = concejalAsignado ? select.options[select.selectedIndex].dataset.lista || null : null;
 

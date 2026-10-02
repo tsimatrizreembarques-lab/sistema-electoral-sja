@@ -108,8 +108,11 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
     .get();
   const preasignados = preasignadosSnap.docs.map((d) => d.data());
 
-  let listaFinal = listaAsignada ?? preasignados[0]?.lista ?? null;
-  let concejalFinal = concejalAsignado ?? preasignados[0]?.nombreConcejal ?? null;
+  // Comando decide el concejal y se respeta lo que eligio, incluso "Sin
+  // concejal" (null). Nunca se completa con preasignados[0]: en un duplicado
+  // seria un concejal cualquiera (el primero por orden alfabetico).
+  let listaFinal = listaAsignada ?? null;
+  let concejalFinal = concejalAsignado ?? null;
   let forzarFinal = Boolean(forzar);
 
   if (usuario.rol === 'mesa') {
@@ -129,6 +132,22 @@ async function registrarVotante({ usuario, cedula, listaAsignada, concejalAsigna
 
     if (yaEstabaRegistrado && !forzarFinal) {
       return { bloqueado: true, existente: registroSnap.data() };
+    }
+
+    if (usuario.rol === 'mesa') {
+      // Mesa solo confirma que voto: nunca cambia el concejal (se ignora lo
+      // que mande el dispositivo, que sin señal puede tener datos viejos).
+      // Si Comando ya lo registro, queda lo que eligio Comando. Si no paso por
+      // Comando, se usa el preasignado solo si es uno; en un duplicado queda
+      // sin concejal.
+      if (yaEstabaRegistrado) {
+        concejalFinal = registroSnap.data().concejalAsignado ?? null;
+        listaFinal = registroSnap.data().listaAsignada ?? null;
+      } else {
+        const unico = preasignados.length === 1 ? preasignados[0] : null;
+        concejalFinal = unico?.nombreConcejal ?? null;
+        listaFinal = unico?.lista ?? null;
+      }
     }
 
     const origenRegistro =

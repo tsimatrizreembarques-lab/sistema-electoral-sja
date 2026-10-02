@@ -194,8 +194,12 @@ function renderResultadoMesa(votante, valorBuscado, perfil) {
 }
 
 async function confirmarRegistroMesa(votante, perfil) {
-  const listaAsignada = votante.registroActual?.listaAsignada ?? votante.preasignados[0]?.lista ?? null;
-  const concejalAsignado = votante.registroActual?.concejalAsignado ?? votante.preasignados[0]?.nombreConcejal ?? null;
+  // Mesa nunca cambia el concejal (el servidor tambien lo ignora): se muestra
+  // el de Comando, o el preasignado solo si es uno (en un duplicado, ninguno).
+  const yaRegistrado = votante.registroActual?.estadoGestion === 'REGISTRADO';
+  const unico = votante.preasignados.length === 1 ? votante.preasignados[0] : null;
+  const listaAsignada = yaRegistrado ? votante.registroActual.listaAsignada ?? null : unico?.lista ?? null;
+  const concejalAsignado = yaRegistrado ? votante.registroActual.concejalAsignado ?? null : unico?.nombreConcejal ?? null;
 
   await window.registrarDesdeDispositivo({
     votante,
