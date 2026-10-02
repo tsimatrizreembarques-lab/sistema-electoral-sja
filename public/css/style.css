@@ -243,6 +243,7 @@ input[type="tel"] {
   font-size: 0.85rem;
   font-weight: 700;
 }
+.etiqueta-comando { color: #1d4ed8; font-weight: 700; font-size: 0.8rem; }
 .etiqueta-duplicado { color: #92400e; font-weight: 700; font-size: 0.8rem; }
 select.selector {
   width: 100%;

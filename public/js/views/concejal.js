@@ -183,6 +183,7 @@ async function renderConcejal(root, perfil) {
     resumen.innerHTML = `
       <p>Total asignado: <strong>${datos.totalAsignado}</strong></p>
       <p>Registrados: <strong>${datos.totalRegistrado}</strong> · Pendientes: <strong>${datos.totalPendiente}</strong></p>
+      ${datos.totalAgregadosEnComando ? `<p class="sub">De los registrados, agregados en Comando (no estaban en tu lista): <strong>${datos.totalAgregadosEnComando}</strong></p>` : ''}
       ${datos.totalOtraLista ? `<p>Votaron con otra lista: <strong>${datos.totalOtraLista}</strong></p>` : ''}
       ${datos.totalSinAsignar ? `<p>Votaron sin concejal asignado: <strong>${datos.totalSinAsignar}</strong></p>` : ''}
     `;
@@ -208,6 +209,7 @@ async function renderConcejal(root, perfil) {
           <span class="sub"> · CI: ${esc(v.cedula)}</span>
           ${v.local ? `<span class="sub"> · ${esc(v.local)}${v.mesa ? ` — Mesa ${esc(v.mesa)}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${esc(v.caudillo)}</span>` : ''}
+          ${v.agregadoEnComando ? '<span class="etiqueta-comando"> · Agregado en Comando</span>' : ''}
           ${v.direccion ? `<span class="sub contacto">📍 ${esc(v.direccion)}</span>` : ''}
           ${wa ? `<span class="contacto"><a class="btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp ${esc(v.telefono)}</a></span>` : ''}
         </span>
@@ -243,6 +245,7 @@ function generarPDFLista(datos, perfil) {
       `Total asignado: ${datos.totalAsignado}`,
       `Registrados: ${datos.totalRegistrado}`,
       `Pendientes: ${datos.totalPendiente}`,
+      ...(datos.totalAgregadosEnComando ? [`De los registrados, agregados en Comando: ${datos.totalAgregadosEnComando}`] : []),
       ...(datos.totalOtraLista ? [`Votaron con otra lista: ${datos.totalOtraLista}`] : []),
       ...(datos.totalSinAsignar ? [`Votaron sin concejal asignado: ${datos.totalSinAsignar}`] : []),
     ],
@@ -252,7 +255,7 @@ function generarPDFLista(datos, perfil) {
       columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado'],
       filas: votantes.map((v, i) => [
         i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.direccion,
-        estadoConcejalTexto(v.estadoGestion),
+        v.agregadoEnComando ? 'Registrado (agregado en Comando)' : estadoConcejalTexto(v.estadoGestion),
       ]),
     }],
   });

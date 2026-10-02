@@ -283,6 +283,7 @@ async function renderAdmin(root, perfil) {
             <div class="fila"><span>Pendientes</span><strong>${c.pendientes}</strong></div>
             <div class="fila"><span>Duplicados con otras listas</span><strong>${c.duplicados}</strong></div>
             <div class="fila"><span>Asignados en Comando</span><strong>${c.asignadosEnComando}</strong></div>
+            <div class="fila"><span>Fuera de su lista</span><strong>${c.fueraDeLista}</strong></div>
           </div>
           ${c.lugares.length
             ? `<p class="sub" style="margin:10px 0 4px;">Por lugar de votación</p>
@@ -304,7 +305,8 @@ async function renderAdmin(root, perfil) {
     resumen.textContent =
       `${c.preasignados} preasignados · ${c.registrados} registrados (${porcentaje(c.registrados, c.preasignados)}) · ` +
       `${c.otraLista} votaron con otra lista${c.sinAsignar ? ` · ${c.sinAsignar} votaron sin asignar` : ''} · ` +
-      `${c.pendientes} pendientes · ${c.duplicados} duplicados · ${c.asignadosEnComando} asignados en Comando`;
+      `${c.pendientes} pendientes · ${c.duplicados} duplicados · ${c.asignadosEnComando} asignados en Comando · ` +
+      `${c.fueraDeLista} fuera de su lista`;
     cont.innerHTML = c.lugares.length === 0
       ? '<p class="sub">Todavía no cargó a nadie.</p>'
       : c.lugares
@@ -637,12 +639,12 @@ function generarPDFReporteConcejales(datos) {
       secciones: [
         {
           titulo: 'Resumen',
-          columnas: ['Opción', 'Concejal', 'Lista', 'Preasignados', 'Registrados', '% avance', 'Con otra lista', 'Sin asignar', 'Pendientes', 'Duplicados', 'Asignados en Comando'],
+          columnas: ['Opción', 'Concejal', 'Lista', 'Preasignados', 'Registrados', '% avance', 'Con otra lista', 'Sin asignar', 'Pendientes', 'Duplicados', 'Asignados en Comando', 'Fuera de su lista'],
           filas: datos.concejales.map((c) => [
             c.opcion, c.nombreConcejal, c.lista, c.preasignados, c.registrados, pct(c.registrados, c.preasignados),
-            c.otraLista, c.sinAsignar, c.pendientes, c.duplicados, c.asignadosEnComando,
+            c.otraLista, c.sinAsignar, c.pendientes, c.duplicados, c.asignadosEnComando, c.fueraDeLista,
           ]),
-          alinearDerecha: [3, 4, 5, 6, 7, 8, 9, 10],
+          alinearDerecha: [3, 4, 5, 6, 7, 8, 9, 10, 11],
         },
         {
           titulo: 'Preasignados por lugar de votación (registrados entre paréntesis)',
@@ -661,7 +663,7 @@ function generarPDFReporteConcejales(datos) {
     });
   }
 
-  const c = datos.concejales[0] || { nombreConcejal: datos.concejal, preasignados: 0, registrados: 0, otraLista: 0, sinAsignar: 0, pendientes: 0, duplicados: 0, asignadosEnComando: 0, lugares: [] };
+  const c = datos.concejales[0] || { nombreConcejal: datos.concejal, preasignados: 0, registrados: 0, otraLista: 0, sinAsignar: 0, pendientes: 0, duplicados: 0, asignadosEnComando: 0, fueraDeLista: 0, lugares: [] };
   const secciones = [{
     titulo: 'Por lugar de votación y mesa',
     columnas: ['Lugar de votación', 'Mesa', 'Preasignados', 'Registrados', 'Con otra lista / sin asignar', 'Pendientes'],
@@ -693,6 +695,7 @@ function generarPDFReporteConcejales(datos) {
       `Pendientes: ${c.pendientes}`,
       `Duplicados: ${c.duplicados}`,
       `Asignados en Comando: ${c.asignadosEnComando}`,
+      `Fuera de su lista: ${c.fueraDeLista}`,
     ],
     horizontal: true,
     pie,

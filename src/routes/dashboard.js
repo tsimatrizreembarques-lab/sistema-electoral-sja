@@ -348,6 +348,16 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
     });
     const asignadosEnComando = (statsSnap.exists && statsSnap.data().porConcejal) || {};
 
+    // Votos asignados a un concejal de gente que NO estaba en su lista
+    // (Comando se los asigno igual): "fuera de su lista".
+    const enLista = new Set(todos.map((v) => `${v.cedula}__${v.nombreConcejal}`));
+    const fueraDeListaPorConcejal = {};
+    asignadoPorCedula.forEach((concejal, cedula) => {
+      if (concejal && !enLista.has(`${cedula}__${concejal}`)) {
+        fueraDeListaPorConcejal[concejal] = (fueraDeListaPorConcejal[concejal] || 0) + 1;
+      }
+    });
+
     const votantes = filtroConcejal ? todos.filter((v) => v.nombreConcejal === filtroConcejal) : todos;
 
     // Ubicacion: las altas nuevas la traen; las importadas se completan del padron.
@@ -371,6 +381,7 @@ router.get('/admin/reporte-concejales', requiereRol('admin'), async (req, res) =
       sinAsignar: 0,
       duplicados: 0,
       asignadosEnComando: asignadosEnComando[nombre] || 0,
+      fueraDeLista: fueraDeListaPorConcejal[nombre] || 0,
       lugares: {},
     });
     concejalesSnap.forEach((d) => {
@@ -658,6 +669,8 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       telefono: preasignadoPorCedula[r.cedula]?.telefono || null,
       direccion: preasignadoPorCedula[r.cedula]?.direccion || null,
       estadoGestion: 'REGISTRADO',
+      // No lo cargo en su lista: Comando se lo asigno igual. Suma, pero se marca.
+      agregadoEnComando: !preasignadoPorCedula[r.cedula],
     }));
 
     // Preasignados a este concejal que todavia no tienen ningun registro.
@@ -723,6 +736,7 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       nombreConcejal,
       totalAsignado: todosLosVotantes.length,
       totalRegistrado: registrados.length,
+      totalAgregadosEnComando: registradosConCaudillo.filter((v) => v.agregadoEnComando).length,
       totalOtraLista: registradosConOtro.filter((v) => v.estadoGestion === 'OTRA_LISTA').length,
       totalSinAsignar: registradosConOtro.filter((v) => v.estadoGestion === 'SIN_ASIGNAR').length,
       totalPendiente: pendientes.length,
