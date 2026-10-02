@@ -18,6 +18,9 @@ async function renderAdmin(root, perfil) {
         <button type="button" id="btn-pdf-duplicados" class="secundario" style="flex-shrink:0;">
           ⚠ Generar reporte
         </button>
+        <button type="button" id="btn-pdf-duplicados-simple" class="secundario" style="flex-shrink:0;">
+          ⚠ Duplicados
+        </button>
       </div>
       <h3>Por escuela</h3>
       <div id="por-escuela"></div>
@@ -84,20 +87,26 @@ async function renderAdmin(root, perfil) {
     generarPDFListasConcejales(datos);
   });
 
-  document.getElementById('btn-pdf-duplicados').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-pdf-duplicados');
-    const concejal = document.getElementById('select-duplicados-concejal').value;
-    btn.disabled = true;
-    btn.textContent = 'Generando...';
-    const { ok, datos } = await window.Api.dashboardAdminDuplicados(concejal);
-    btn.disabled = false;
-    btn.textContent = '⚠ Generar reporte';
-    if (!ok) {
-      window.Notificaciones.mostrarModal('No se pudo generar', datos?.error || 'No se pudo generar el reporte.');
-      return;
-    }
-    generarPDFDuplicados(datos);
-  });
+  // Dos botones con el mismo reporte: el completo, y uno sin la columna de
+  // con quien se comparte cada cedula ("Comparte con" / "Concejales").
+  function botonPDFDuplicados(id, texto, opciones) {
+    const btn = document.getElementById(id);
+    btn.addEventListener('click', async () => {
+      const concejal = document.getElementById('select-duplicados-concejal').value;
+      btn.disabled = true;
+      btn.textContent = 'Generando...';
+      const { ok, datos } = await window.Api.dashboardAdminDuplicados(concejal);
+      btn.disabled = false;
+      btn.textContent = texto;
+      if (!ok) {
+        window.Notificaciones.mostrarModal('No se pudo generar', datos?.error || 'No se pudo generar el reporte.');
+        return;
+      }
+      generarPDFDuplicados(datos, opciones);
+    });
+  }
+  botonPDFDuplicados('btn-pdf-duplicados', '⚠ Generar reporte', {});
+  botonPDFDuplicados('btn-pdf-duplicados-simple', '⚠ Duplicados', { sinConcejales: true });
 
   function tabla(objeto) {
     const entradas = Object.entries(objeto).sort((a, b) => b[1] - a[1]);
@@ -456,9 +465,10 @@ function generarPDFListasConcejales(datos) {
  * PDF de cedulas que figuran en 2 o mas listas. Con un concejal elegido,
  * trae solo las de su lista y muestra con quienes las comparte.
  */
-function generarPDFDuplicados(datos) {
+function generarPDFDuplicados(datos, { sinConcejales = false } = {}) {
   const deUno = Boolean(datos.concejal);
   const caudillo = (c) => (c.caudillo ? ` (caudillo: ${c.caudillo})` : '');
+  const columnaConcejales = deUno ? 'Comparte con' : 'Concejales';
 
   return window.PDF.descargar({
     titulo: deUno ? `Duplicados de ${datos.concejal}` : 'Reporte de duplicados',
@@ -467,20 +477,24 @@ function generarPDFDuplicados(datos) {
       : 'Cédulas que figuran en 2 o más listas de concejales',
     resumen: [`${datos.total} cédulas duplicadas`],
     horizontal: true,
-    pie: 'Confidencial: uso exclusivo del administrador',
+    // La version sin concejales es para poder entregarla: no lleva el pie de
+    // confidencial ni la cantidad de listas en que figura cada cedula.
+    pie: sinConcejales ? '' : 'Confidencial: uso exclusivo del administrador',
     nombreArchivo: deUno ? `Duplicados ${datos.concejal}` : 'Duplicados',
     secciones: [{
-      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Estado', 'Cant.', deUno ? 'Comparte con' : 'Concejales'],
+      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Estado', ...(sinConcejales ? [] : ['Cant.', columnaConcejales])],
       filas: datos.duplicados.map((d, i) => [
         i + 1, d.cedula, d.nombresApellidos, d.local, d.mesa,
         d.estadoGestion === 'REGISTRADO' ? `Registrado (${d.origenRegistro || ''})` : 'Pendiente',
-        d.cantidadConcejales,
-        d.concejales
-          .filter((c) => !deUno || c.nombreConcejal !== datos.concejal)
-          .map((c) => `${c.nombreConcejal}${caudillo(c)}`)
-          .join('\n'),
+        ...(sinConcejales ? [] : [
+          d.cantidadConcejales,
+          d.concejales
+            .filter((c) => !deUno || c.nombreConcejal !== datos.concejal)
+            .map((c) => `${c.nombreConcejal}${caudillo(c)}`)
+            .join('\n'),
+        ]),
       ]),
-      alinearDerecha: [6],
+      alinearDerecha: sinConcejales ? [] : [6],
     }],
   });
 }
