@@ -259,6 +259,7 @@ window.formatearHistorial = function (historial) {
     FORZADO: 'Registrado (forzado)',
     CONFIRMACION_MESA: 'Confirmado en Mesa (paso final)',
     INTENTO_BLOQUEADO: 'Intento bloqueado',
+    CAMBIO_CONCEJAL: 'Concejal corregido por el admin',
   };
   return historial
     .slice()

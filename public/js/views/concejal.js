@@ -183,6 +183,8 @@ async function renderConcejal(root, perfil) {
     resumen.innerHTML = `
       <p>Total asignado: <strong>${datos.totalAsignado}</strong></p>
       <p>Registrados: <strong>${datos.totalRegistrado}</strong> · Pendientes: <strong>${datos.totalPendiente}</strong></p>
+      ${datos.totalOtraLista ? `<p>Votaron con otra lista: <strong>${datos.totalOtraLista}</strong></p>` : ''}
+      ${datos.totalSinAsignar ? `<p>Votaron sin concejal asignado: <strong>${datos.totalSinAsignar}</strong></p>` : ''}
     `;
 
     const entradasPorMesa = Object.entries(datos.porMesa || {}).sort((a, b) => b[1].total - a[1].total);
@@ -195,10 +197,12 @@ async function renderConcejal(root, perfil) {
     document.getElementById('lista').innerHTML = datos.votantes
       .map((v) => {
         const registrado = v.estadoGestion === 'REGISTRADO';
+        // Voto, pero quedo asignado a otro concejal (o a ninguno): no suma.
+        const votoSinMi = v.estadoGestion === 'OTRA_LISTA' || v.estadoGestion === 'SIN_ASIGNAR';
         const wa = window.enlaceWhatsApp(v.telefono);
         return `
-      <div class="fila-votante ${registrado ? 'ok' : ''}">
-        <span class="icono-estado">${registrado ? '✓' : '○'}</span>
+      <div class="fila-votante ${registrado ? 'ok' : ''} ${votoSinMi ? 'otra-lista' : ''}">
+        <span class="icono-estado">${registrado ? '✓' : votoSinMi ? '↷' : '○'}</span>
         <span class="nombre-votante">
           ${esc(v.nombresApellidos)}
           <span class="sub"> · CI: ${esc(v.cedula)}</span>
@@ -207,10 +211,10 @@ async function renderConcejal(root, perfil) {
           ${v.direccion ? `<span class="sub contacto">📍 ${esc(v.direccion)}</span>` : ''}
           ${wa ? `<span class="contacto"><a class="btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp ${esc(v.telefono)}</a></span>` : ''}
         </span>
-        <span class="estado">${registrado ? 'Registrado' : 'Pendiente'}</span>
+        <span class="estado">${estadoConcejalTexto(v.estadoGestion)}</span>
         <span class="acciones-fila">
           <button class="btn-editar" data-cedula="${esc(v.cedula)}">${v.telefono || v.direccion ? 'Editar contacto' : '+ Contacto'}</button>
-          ${registrado ? '' : `<button class="btn-eliminar" data-cedula="${esc(v.cedula)}">Eliminar</button>`}
+          ${registrado || votoSinMi ? '' : `<button class="btn-eliminar" data-cedula="${esc(v.cedula)}">Eliminar</button>`}
         </span>
       </div>`;
       })
@@ -239,6 +243,8 @@ function generarPDFLista(datos, perfil) {
       `Total asignado: ${datos.totalAsignado}`,
       `Registrados: ${datos.totalRegistrado}`,
       `Pendientes: ${datos.totalPendiente}`,
+      ...(datos.totalOtraLista ? [`Votaron con otra lista: ${datos.totalOtraLista}`] : []),
+      ...(datos.totalSinAsignar ? [`Votaron sin concejal asignado: ${datos.totalSinAsignar}`] : []),
     ],
     horizontal: true,
     nombreArchivo: `Lista ${perfil.nombreConcejal}`,
@@ -246,10 +252,18 @@ function generarPDFLista(datos, perfil) {
       columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado'],
       filas: votantes.map((v, i) => [
         i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.direccion,
-        v.estadoGestion === 'REGISTRADO' ? 'Registrado' : 'Pendiente',
+        estadoConcejalTexto(v.estadoGestion),
       ]),
     }],
   });
+}
+
+/** Texto del estado de un votante en la lista del concejal (pantalla y PDF). */
+function estadoConcejalTexto(estado) {
+  if (estado === 'REGISTRADO') return 'Registrado';
+  if (estado === 'OTRA_LISTA') return 'Votó con otra lista';
+  if (estado === 'SIN_ASIGNAR') return 'Votó (sin asignar)';
+  return 'Pendiente';
 }
 
 window.renderConcejal = renderConcejal;

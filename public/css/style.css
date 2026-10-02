@@ -118,6 +118,8 @@ button.link { background: transparent; color: var(--gris); font-weight: 400; tex
   font-size: 0.9rem;
 }
 .fila-votante.ok { border-left: 4px solid var(--verde); background: #f0fdf4; }
+.fila-votante.otra-lista { border-left: 4px solid var(--gris); background: #f4f4f5; }
+.fila-votante.otra-lista .estado { color: var(--gris-oscuro); font-weight: 600; }
 .fila-votante .estado { color: var(--gris); font-size: 0.8rem; text-align: right; }
 
 .acciones-fila { display: flex; gap: 6px; flex-shrink: 0; }

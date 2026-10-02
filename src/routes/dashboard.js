@@ -1,10 +1,10 @@
 const express = require('express');
-const { getFirestore } = require('../lib/firestore');
+const { getFirestore, admin } = require('../lib/firestore');
 const { requiereRol } = require('../lib/auth');
 const { statsRef } = require('../lib/stats');
 const { normalizarCedula } = require('../lib/normalizar');
 const { quitarDeLista } = require('../lib/listasConcejal');
-const { sincronizarListasConcejalesDebounced } = require('../lib/sheetsBackup');
+const { sincronizarListasConcejalesDebounced, backupRegistro } = require('../lib/sheetsBackup');
 
 const router = express.Router();
 
@@ -541,6 +541,65 @@ router.delete('/admin/lista', requiereRol('admin'), async (req, res) => {
 });
 
 /**
+ * PATCH /api/dashboard/admin/registro/:cedula
+ * body: { concejalAsignado }  (null = sin concejal)
+ * El admin corrige a que concejal quedo asignado un votante YA registrado
+ * (ej. el operador de Comando eligio mal en un duplicado). Ajusta el conteo
+ * por concejal y deja el cambio anotado en el historial del registro.
+ */
+router.patch('/admin/registro/:cedula', requiereRol('admin'), async (req, res) => {
+  try {
+    const cedula = normalizarCedula(req.params.cedula);
+    if (!cedula) return res.status(400).json({ error: 'Cedula invalida.' });
+    const concejalNuevo = String(req.body.concejalAsignado || '').trim() || null;
+
+    const db = getFirestore();
+    let listaNueva = null;
+    if (concejalNuevo) {
+      const concejalSnap = await db.collection('concejales').doc(concejalNuevo).get();
+      if (!concejalSnap.exists) return res.status(404).json({ error: 'Ese concejal no existe.' });
+      listaNueva = concejalSnap.data().lista ?? null;
+    }
+
+    const registroRef = db.collection('registros').doc(cedula);
+    const resultado = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(registroRef);
+      if (!snap.exists || snap.data().estadoGestion !== 'REGISTRADO') {
+        return { codigo: 404, error: 'Esa cedula todavia no fue registrada.' };
+      }
+      const concejalAnterior = snap.data().concejalAsignado || null;
+      if (concejalAnterior === concejalNuevo) return { sinCambios: true, concejalAnterior };
+
+      const fechaHora = new Date().toISOString();
+      const origenRegistro = `Admin (${req.usuario.usuario}): ${concejalAnterior || 'sin concejal'} → ${concejalNuevo || 'sin concejal'}`;
+      tx.update(registroRef, {
+        concejalAsignado: concejalNuevo,
+        listaAsignada: listaNueva,
+        historial: admin.firestore.FieldValue.arrayUnion({ tipo: 'CAMBIO_CONCEJAL', origenRegistro, fechaHora }),
+      });
+
+      const porConcejal = {};
+      if (concejalAnterior) porConcejal[concejalAnterior] = admin.firestore.FieldValue.increment(-1);
+      if (concejalNuevo) porConcejal[concejalNuevo] = admin.firestore.FieldValue.increment(1);
+      tx.set(statsRef(db), { porConcejal }, { merge: true });
+
+      return {
+        concejalAnterior,
+        respaldo: { ...snap.data(), concejalAsignado: concejalNuevo, listaAsignada: listaNueva, origenRegistro, fechaHora, tipo: 'CAMBIO_CONCEJAL', dispositivoId: null },
+      };
+    });
+
+    if (resultado.error) return res.status(resultado.codigo).json({ error: resultado.error });
+    // Respaldo en Sheets: nunca bloquea ni hace fallar la correccion.
+    if (resultado.respaldo) backupRegistro(resultado.respaldo).catch(() => {});
+    res.json({ ok: true, cedula, concejalAnterior: resultado.concejalAnterior, concejalAsignado: concejalNuevo, listaAsignada: listaNueva });
+  } catch (error) {
+    console.error('Error al corregir concejal de un registro:', error);
+    res.status(500).json({ error: 'Error interno al corregir el concejal.' });
+  }
+});
+
+/**
  * GET /api/dashboard/concejal
  * Vista individual: solo los votantes donde el concejal quedo como ASIGNADO
  * (el confirmado en comando/mesa, no el simple preasignado que pudo quedar ambiguo),
@@ -595,21 +654,22 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       .filter((c) => !cedulasRegistradas.has(c));
 
     // Tambien se mira si ya votaron: alguien de esta lista puede haber sido
-    // registrado con OTRO concejal asignado (o sin concejal) en Comando. Antes
-    // quedaba como "Pendiente" para siempre y el boton Eliminar fallaba. Se
-    // muestra como registrado, pero sin decir con quien (eso es solo del admin).
+    // registrado con OTRO concejal asignado (o sin concejal) en Comando. Se
+    // muestra como "Votó con otra lista" (o "sin asignar") y NO suma a sus
+    // registrados, pero sin decir con quien (eso es solo del admin).
     const padronPorCedula = {};
-    const yaVotaron = new Set();
+    const yaVotaron = new Map(); // cedula -> 'OTRA_LISTA' | 'SIN_ASIGNAR'
     for (let i = 0; i < cedulasPendientes.length; i += LOTE) {
       const lote = cedulasPendientes.slice(i, i + LOTE);
       if (lote.length === 0) continue;
       const [padronSnap, registrosSnap] = await Promise.all([
         db.collection('padron').where('cedula', 'in', lote).get(),
-        db.collection('registros').where('cedula', 'in', lote).select('cedula', 'estadoGestion').get(),
+        db.collection('registros').where('cedula', 'in', lote).select('cedula', 'estadoGestion', 'concejalAsignado').get(),
       ]);
       padronSnap.forEach((d) => { padronPorCedula[d.id] = d.data(); });
       registrosSnap.forEach((d) => {
-        if (d.data().estadoGestion === 'REGISTRADO') yaVotaron.add(d.id);
+        if (d.data().estadoGestion !== 'REGISTRADO') return;
+        yaVotaron.set(d.id, d.data().concejalAsignado ? 'OTRA_LISTA' : 'SIN_ASIGNAR');
       });
     }
 
@@ -627,7 +687,7 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
         caudillo: v.caudillo || null,
         telefono: v.telefono || null,
         direccion: v.direccion || null,
-        estadoGestion: yaVotaron.has(v.cedula) ? 'REGISTRADO' : 'PENDIENTE',
+        estadoGestion: yaVotaron.get(v.cedula) || 'PENDIENTE',
       };
       (yaVotaron.has(v.cedula) ? registradosConOtro : pendientes).push(item);
     }
@@ -647,7 +707,9 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
     res.json({
       nombreConcejal,
       totalAsignado: todosLosVotantes.length,
-      totalRegistrado: registrados.length + registradosConOtro.length,
+      totalRegistrado: registrados.length,
+      totalOtraLista: registradosConOtro.filter((v) => v.estadoGestion === 'OTRA_LISTA').length,
+      totalSinAsignar: registradosConOtro.filter((v) => v.estadoGestion === 'SIN_ASIGNAR').length,
       totalPendiente: pendientes.length,
       porMesa,
       votantes: todosLosVotantes,

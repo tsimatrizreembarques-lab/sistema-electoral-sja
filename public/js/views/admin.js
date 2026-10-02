@@ -22,6 +22,15 @@ async function renderAdmin(root, perfil) {
           ⚠ Duplicados
         </button>
       </div>
+      <h3>Corregir concejal de un registro</h3>
+      <div class="tarjeta">
+        <form id="form-corregir" style="display:flex; gap:8px; margin:0;">
+          <input id="corregir-cedula" type="text" inputmode="numeric" placeholder="Cédula ya registrada" style="flex:1; margin:0;" />
+          <button type="submit" class="secundario" style="flex-shrink:0;">🔍 Buscar</button>
+        </form>
+        <div id="corregir-resultado"></div>
+      </div>
+
       <h3>Por escuela</h3>
       <div id="por-escuela"></div>
       <h3>Por concejal</h3>
@@ -158,9 +167,12 @@ async function renderAdmin(root, perfil) {
 
   // Los tres selectores de concejal del admin (gestion de listas, duplicados
   // y preasignados) se llenan con la misma consulta.
+  let concejalesAdmin = [];
+
   async function cargarSelectorConcejales() {
     const { ok, datos } = await window.Api.adminListarConcejales();
     if (!ok || !document.getElementById('select-lista-concejal')) return;
+    concejalesAdmin = datos.concejales;
     const opciones = datos.concejales
       .map((c) => `<option value="${esc(c.nombreConcejal)}">${c.opcion ? `Opción ${esc(c.opcion)} — ` : ''}${esc(c.nombreConcejal)}${c.lista ? ` (Lista ${esc(c.lista)})` : ''}</option>`)
       .join('');
@@ -168,6 +180,70 @@ async function renderAdmin(root, perfil) {
     document.getElementById('select-duplicados-concejal').innerHTML = '<option value="">Duplicados: todos los concejales</option>' + opciones;
     document.getElementById('select-pre-concejal').innerHTML = '<option value="">Todos los concejales</option>' + opciones;
     document.getElementById('select-rep-concejal').innerHTML = '<option value="">Todos los concejales (comparativo)</option>' + opciones;
+  }
+
+  // --- Corregir concejal: el admin busca una cedula YA registrada y cambia a
+  // que concejal quedo asignada (queda anotado en el historial). ---
+  const contCorregir = document.getElementById('corregir-resultado');
+
+  document.getElementById('form-corregir').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cedula = window.normalizarCedula(document.getElementById('corregir-cedula').value);
+    if (!cedula) return;
+    contCorregir.innerHTML = '<p class="sub">Buscando...</p>';
+    const { ok, datos } = await window.Api.buscarVotante(cedula);
+    if (!ok) {
+      contCorregir.innerHTML = `<p class="alerta">${esc(datos?.error || 'No se encontró la cédula.')}</p>`;
+      return;
+    }
+    mostrarCorreccion(datos);
+  });
+
+  function mostrarCorreccion(votante) {
+    const r = votante.registroActual;
+    if (r?.estadoGestion !== 'REGISTRADO') {
+      contCorregir.innerHTML = `<p class="sub">${esc(votante.nombresApellidos)} todavía no fue registrado: no hay nada que corregir.</p>`;
+      return;
+    }
+    const actual = r.concejalAsignado || '';
+    const enSusListas = new Set(votante.preasignados.map((p) => p.nombreConcejal));
+    const opcion = (c) =>
+      `<option value="${esc(c.nombreConcejal)}" ${c.nombreConcejal === actual ? 'selected' : ''}>${c.opcion ? `Opción ${esc(c.opcion)} — ` : ''}${esc(c.nombreConcejal)}${c.lista ? ` (Lista ${esc(c.lista)})` : ''}</option>`;
+    const deSusListas = concejalesAdmin.filter((c) => enSusListas.has(c.nombreConcejal));
+    const otros = concejalesAdmin.filter((c) => !enSusListas.has(c.nombreConcejal));
+
+    contCorregir.innerHTML = `
+      <p style="margin-top:12px;"><strong>${esc(votante.nombresApellidos)}</strong> · CI ${esc(votante.cedula)} · ${esc(votante.local)} — Mesa ${esc(votante.mesa)}</p>
+      <p class="sub">${esc(r.origenRegistro || '')}</p>
+      <p>Figura en: <strong>${votante.preasignados.length ? votante.preasignados.map((p) => esc(p.nombreConcejal)).join(', ') : 'ninguna lista'}</strong></p>
+      <p>Asignado ahora: <strong>${esc(actual || 'Sin concejal')}</strong></p>
+      <select id="corregir-select" class="selector">
+        <option value="" ${actual ? '' : 'selected'}>Sin concejal</option>
+        ${deSusListas.length ? `<optgroup label="En cuya lista figura">${deSusListas.map(opcion).join('')}</optgroup>` : ''}
+        <optgroup label="${deSusListas.length ? 'Otros concejales' : 'Concejales'}">${otros.map(opcion).join('')}</optgroup>
+      </select>
+      <button type="button" id="btn-corregir-guardar" class="primario" style="width:100%;">Guardar cambio</button>
+    `;
+
+    document.getElementById('btn-corregir-guardar').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const nuevo = document.getElementById('corregir-select').value || null;
+      if ((nuevo || '') === actual) {
+        window.Notificaciones.mostrarModal('Sin cambios', 'Ya está asignado a ese concejal.');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      const { ok, datos } = await window.Api.adminCorregirConcejal(votante.cedula, nuevo);
+      if (!ok) {
+        btn.disabled = false;
+        btn.textContent = 'Guardar cambio';
+        window.Notificaciones.mostrarModal('No se pudo guardar', datos?.error || 'No se pudo corregir el concejal.');
+        return;
+      }
+      contCorregir.innerHTML = `<p class="ok" style="margin-top:12px;">Listo: ${esc(votante.nombresApellidos)} pasó de <strong>${esc(datos.concejalAnterior || 'Sin concejal')}</strong> a <strong>${esc(datos.concejalAsignado || 'Sin concejal')}</strong>.</p>`;
+      document.getElementById('corregir-cedula').value = '';
+    });
   }
 
   // --- Reporte por concejal: comparativo de todos, o la ficha de uno ---

@@ -127,6 +127,13 @@ const Api = {
     const qs = `concejal=${encodeURIComponent(nombreConcejal)}&cedula=${encodeURIComponent(cedula)}`;
     return this._fetch(`/api/dashboard/admin/lista?${qs}`, { method: 'DELETE' });
   },
+
+  adminCorregirConcejal(cedula, concejalAsignado) {
+    return this._fetch(`/api/dashboard/admin/registro/${encodeURIComponent(cedula)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ concejalAsignado }),
+    });
+  },
 };
 
 window.Api = Api;
