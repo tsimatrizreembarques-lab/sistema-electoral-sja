@@ -26,7 +26,7 @@ async function renderAdmin(root, perfil) {
       <div class="tarjeta">
         <form id="form-corregir" style="display:flex; gap:8px; margin:0;">
           <input id="corregir-cedula" type="text" inputmode="numeric" placeholder="Cédula ya registrada" style="flex:1; margin:0;" />
-          <button type="submit" class="secundario" style="flex-shrink:0;">🔍 Buscar</button>
+          <button type="submit" class="secundario" style="flex-shrink:0; width:auto;">🔍 Buscar</button>
         </form>
         <div id="corregir-resultado"></div>
       </div>
