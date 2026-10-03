@@ -626,6 +626,25 @@ router.patch('/admin/registro/:cedula', requiereRol('admin'), async (req, res) =
 });
 
 /**
+ * Cuantas listas tiene cada cedula (cedula -> cantidad). Se cachea unos
+ * minutos en memoria: la pantalla del concejal se refresca cada 25s y no
+ * hace falta leer todas las listas en cada refresco.
+ */
+const TTL_CONTEO_LISTAS_MS = 2 * 60 * 1000;
+let cacheConteoListas = { hasta: 0, promesa: null };
+function conteoListasPorCedula(db) {
+  if (cacheConteoListas.promesa && Date.now() < cacheConteoListas.hasta) return cacheConteoListas.promesa;
+  const promesa = db.collection('votantesConcejal').select('cedula').get().then((snap) => {
+    const conteo = new Map();
+    snap.forEach((d) => conteo.set(d.data().cedula, (conteo.get(d.data().cedula) || 0) + 1));
+    return conteo;
+  });
+  cacheConteoListas = { hasta: Date.now() + TTL_CONTEO_LISTAS_MS, promesa };
+  promesa.catch(() => { cacheConteoListas = { hasta: 0, promesa: null }; });
+  return promesa;
+}
+
+/**
  * GET /api/dashboard/concejal
  * Vista individual: solo los votantes donde el concejal quedo como ASIGNADO
  * (el confirmado en comando/mesa, no el simple preasignado que pudo quedar ambiguo),
@@ -640,9 +659,10 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
 
     const db = getFirestore();
 
-    const [registradosSnap, preasignadosSnap] = await Promise.all([
+    const [registradosSnap, preasignadosSnap, listasPorCedula] = await Promise.all([
       db.collection('registros').where('concejalAsignado', '==', nombreConcejal).get(),
       db.collection('votantesConcejal').where('nombreConcejal', '==', nombreConcejal).get(),
+      conteoListasPorCedula(db),
     ]);
 
     const registrados = registradosSnap.docs.map((d) => d.data());
@@ -652,9 +672,13 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       preasignadoPorCedula[d.data().cedula] = d.data();
     });
 
-    // Nota: si una cedula esta tambien en la lista de OTRO concejal, eso
-    // nunca se calcula ni se expone aca — esa visibilidad es exclusiva del
-    // admin (reporte de duplicados). El concejal no se entera.
+    // Duplicados: al concejal se le dice SOLO en cuantas listas esta la
+    // cedula (contando la suya), nunca en cuales ni de que concejal. Los
+    // nombres de los otros concejales no salen del servidor.
+    const enCuantasListas = (cedula) => {
+      const n = listasPorCedula.get(cedula) || 0;
+      return n > 1 ? n : null;
+    };
     //
     // Se devuelve SOLO una proyeccion limpia de cada registro: nada de
     // historial, dispositivoId, ni el detalle interno de origen — asi un
@@ -671,6 +695,8 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       estadoGestion: 'REGISTRADO',
       // No lo cargo en su lista: Comando se lo asigno igual. Suma, pero se marca.
       agregadoEnComando: !preasignadoPorCedula[r.cedula],
+      // Solo se marca duplicado si esta en SU lista (y en otra mas).
+      enListas: preasignadoPorCedula[r.cedula] ? enCuantasListas(r.cedula) : null,
     }));
 
     // Preasignados a este concejal que todavia no tienen ningun registro.
@@ -716,6 +742,7 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
         telefono: v.telefono || null,
         direccion: v.direccion || null,
         estadoGestion: yaVotaron.get(v.cedula) || 'PENDIENTE',
+        enListas: enCuantasListas(v.cedula),
       };
       (yaVotaron.has(v.cedula) ? registradosConOtro : pendientes).push(item);
     }
@@ -740,6 +767,7 @@ router.get('/concejal', requiereRol('concejal'), async (req, res) => {
       totalOtraLista: registradosConOtro.filter((v) => v.estadoGestion === 'OTRA_LISTA').length,
       totalSinAsignar: registradosConOtro.filter((v) => v.estadoGestion === 'SIN_ASIGNAR').length,
       totalPendiente: pendientes.length,
+      totalDuplicados: todosLosVotantes.filter((v) => v.enListas).length,
       porMesa,
       votantes: todosLosVotantes,
     });

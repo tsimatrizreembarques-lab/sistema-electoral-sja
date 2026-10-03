@@ -15,12 +15,15 @@ async function renderConcejal(root, perfil) {
     <main class="contenido">
       <div id="resumen" class="tarjeta"></div>
 
-      <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
         <button type="button" id="btn-ver-por-mesa" class="secundario" style="flex:1;">
           📊 Ver avance por mesa
         </button>
         <button type="button" id="btn-pdf" class="secundario" style="flex:1;">
           📄 Generar PDF
+        </button>
+        <button type="button" id="btn-pdf-duplicados" class="secundario" style="flex:1;">
+          ⚠ Mis duplicados
         </button>
       </div>
       <div id="por-mesa" class="oculto"></div>
@@ -72,6 +75,15 @@ async function renderConcejal(root, perfil) {
   document.getElementById('btn-pdf').addEventListener('click', () => {
     if (!ultimosDatos) return;
     generarPDFLista(ultimosDatos, perfil);
+  });
+
+  document.getElementById('btn-pdf-duplicados').addEventListener('click', () => {
+    if (!ultimosDatos) return;
+    if (!ultimosDatos.votantes.some((v) => v.enListas)) {
+      window.Notificaciones.mostrarModal('Sin duplicados', 'Ninguna persona de tu lista está también en otra lista.');
+      return;
+    }
+    generarPDFDuplicadosConcejal(ultimosDatos, perfil);
   });
 
   document.getElementById('form-agregar').addEventListener('submit', async (e) => {
@@ -186,6 +198,7 @@ async function renderConcejal(root, perfil) {
       ${datos.totalAgregadosEnComando ? `<p class="sub">De los registrados, agregados en Comando (no estaban en tu lista): <strong>${datos.totalAgregadosEnComando}</strong></p>` : ''}
       ${datos.totalOtraLista ? `<p>Votaron con otra lista: <strong>${datos.totalOtraLista}</strong></p>` : ''}
       ${datos.totalSinAsignar ? `<p>Votaron sin concejal asignado: <strong>${datos.totalSinAsignar}</strong></p>` : ''}
+      ${datos.totalDuplicados ? `<p class="etiqueta-duplicado">⚠ ${datos.totalDuplicados} de tu lista también están en otras listas</p>` : ''}
     `;
 
     const entradasPorMesa = Object.entries(datos.porMesa || {}).sort((a, b) => b[1].total - a[1].total);
@@ -202,7 +215,7 @@ async function renderConcejal(root, perfil) {
         const votoSinMi = v.estadoGestion === 'OTRA_LISTA' || v.estadoGestion === 'SIN_ASIGNAR';
         const wa = window.enlaceWhatsApp(v.telefono);
         return `
-      <div class="fila-votante ${registrado ? 'ok' : ''} ${votoSinMi ? 'otra-lista' : ''}">
+      <div class="fila-votante ${registrado ? 'ok' : ''} ${votoSinMi ? 'otra-lista' : ''} ${v.enListas && !registrado && !votoSinMi ? 'duplicado' : ''}">
         <span class="icono-estado">${registrado ? '✓' : votoSinMi ? '↷' : '○'}</span>
         <span class="nombre-votante">
           ${esc(v.nombresApellidos)}
@@ -210,6 +223,7 @@ async function renderConcejal(root, perfil) {
           ${v.local ? `<span class="sub"> · ${esc(v.local)}${v.mesa ? ` — Mesa ${esc(v.mesa)}` : ''}</span>` : ''}
           ${v.caudillo ? `<span class="sub"> · Caudillo: ${esc(v.caudillo)}</span>` : ''}
           ${v.agregadoEnComando ? '<span class="etiqueta-comando"> · Agregado en Comando</span>' : ''}
+          ${v.enListas ? `<span class="etiqueta-duplicado"> · ⚠ Duplicado · en ${v.enListas} listas</span>` : ''}
           ${v.direccion ? `<span class="sub contacto">📍 ${esc(v.direccion)}</span>` : ''}
           ${wa ? `<span class="contacto"><a class="btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp ${esc(v.telefono)}</a></span>` : ''}
         </span>
@@ -231,13 +245,17 @@ async function renderConcejal(root, perfil) {
  * Descarga la lista del concejal como PDF, generado en el propio dispositivo
  * (funciona tambien sin señal: los datos son los ultimos cargados en pantalla).
  */
-function generarPDFLista(datos, perfil) {
-  const votantes = [...datos.votantes].sort((a, b) => {
+function ordenarPorLocalMesaNombre(lista) {
+  return [...lista].sort((a, b) => {
     const localA = a.local || '', localB = b.local || '';
     if (localA !== localB) return localA.localeCompare(localB);
     if ((a.mesa || 0) !== (b.mesa || 0)) return (a.mesa || 0) - (b.mesa || 0);
     return (a.nombresApellidos || '').localeCompare(b.nombresApellidos || '');
   });
+}
+
+function generarPDFLista(datos, perfil) {
+  const votantes = ordenarPorLocalMesaNombre(datos.votantes);
 
   return window.PDF.descargar({
     titulo: `Lista de votantes — ${perfil.nombreConcejal}`,
@@ -248,14 +266,46 @@ function generarPDFLista(datos, perfil) {
       ...(datos.totalAgregadosEnComando ? [`De los registrados, agregados en Comando: ${datos.totalAgregadosEnComando}`] : []),
       ...(datos.totalOtraLista ? [`Votaron con otra lista: ${datos.totalOtraLista}`] : []),
       ...(datos.totalSinAsignar ? [`Votaron sin concejal asignado: ${datos.totalSinAsignar}`] : []),
+      ...(datos.totalDuplicados ? [`También en otras listas (resaltados): ${datos.totalDuplicados}`] : []),
     ],
     horizontal: true,
     nombreArchivo: `Lista ${perfil.nombreConcejal}`,
     secciones: [{
-      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado'],
+      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'Dirección', 'Estado', 'Duplicado'],
       filas: votantes.map((v, i) => [
         i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.direccion,
         v.agregadoEnComando ? 'Registrado (agregado en Comando)' : estadoConcejalTexto(v.estadoGestion),
+        v.enListas ? `En ${v.enListas} listas` : '',
+      ]),
+      resaltar: (i) => Boolean(votantes[i].enListas),
+    }],
+  });
+}
+
+/**
+ * PDF solo con los duplicados del concejal: en cuantas listas esta cada uno,
+ * sin decir de que concejal son las otras listas.
+ */
+function generarPDFDuplicadosConcejal(datos, perfil) {
+  const duplicados = ordenarPorLocalMesaNombre(datos.votantes.filter((v) => v.enListas));
+  const porCantidad = {};
+  duplicados.forEach((v) => { porCantidad[v.enListas] = (porCantidad[v.enListas] || 0) + 1; });
+  const desglose = Object.keys(porCantidad).sort((a, b) => a - b)
+    .map((n) => `${porCantidad[n]} en ${n} listas`).join(', ');
+
+  return window.PDF.descargar({
+    titulo: `Duplicados — ${perfil.nombreConcejal}`,
+    resumen: [
+      `${duplicados.length} personas de tu lista también están en otras listas`,
+      desglose,
+    ],
+    horizontal: true,
+    nombreArchivo: `Duplicados ${perfil.nombreConcejal}`,
+    secciones: [{
+      columnas: ['#', 'Cédula', 'Nombre', 'Local', 'Mesa', 'Caudillo', 'Teléfono', 'En cuántas listas', 'Estado'],
+      filas: duplicados.map((v, i) => [
+        i + 1, v.cedula, v.nombresApellidos, v.local, v.mesa, v.caudillo, v.telefono, v.enListas,
+        estadoConcejalTexto(v.estadoGestion),
       ]),
     }],
   });
